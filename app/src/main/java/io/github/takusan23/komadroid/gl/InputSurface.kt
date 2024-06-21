@@ -82,10 +82,7 @@ class InputSurface(private val outputSurface: Surface) {
         checkEglError("eglCreateWindowSurface")
     }
 
-    /**
-     * Discards all resources held by this class, notably the EGL context.  Also releases the
-     * Surface that was passed to our constructor.
-     */
+    /** Discards all resources held by this class, notably the EGL context. */
     fun destroy() {
         if (mEGLDisplay != EGL14.EGL_NO_DISPLAY) {
             EGL14.eglMakeCurrent(mEGLDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
