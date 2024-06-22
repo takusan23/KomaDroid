@@ -11,6 +11,8 @@ import android.hardware.camera2.CameraManager
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
+import android.media.MediaRecorder
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.Surface
@@ -40,12 +42,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 
 /** カメラを開いたり、プレビュー用の SurfaceView を作ったり、静止画撮影したりする */
 @OptIn(ExperimentalCoroutinesApi::class)
-class KomaDroidCameraManager(private val context: Context) {
+class KomaDroidCameraManager(
+    private val context: Context,
+    private val mode: CaptureMode
+) {
 
     private val scope = CoroutineScope(Dispatchers.Default + Job())
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -69,8 +75,17 @@ class KomaDroidCameraManager(private val context: Context) {
     /** 静止画撮影用[ImageReader] */
     private var imageReader: ImageReader? = null
 
+    /** 録画用の[MediaRecorder] */
+    private var mediaRecorder: MediaRecorder? = null
+
+    /** 録画保存先 */
+    private var saveVideoFile: File? = null
+
     /** 録画用[OpenGlDrawPair] */
     private var recordOpenGlDrawPair: OpenGlDrawPair? = null
+
+    /** 出力先 Surface */
+    val surfaceView = SurfaceView(context)
 
     /**
      * [SurfaceView]へ OpenGL で描画できるやつ。
@@ -126,9 +141,6 @@ class KomaDroidCameraManager(private val context: Context) {
         initialValue = null
     )
 
-    /** 出力先 Surface */
-    val surfaceView = SurfaceView(context)
-
     /** カメラを開く */
     fun openCamera() {
         scope.launch {
@@ -136,11 +148,10 @@ class KomaDroidCameraManager(private val context: Context) {
             backCamera = awaitOpenCamera(getBackCameraId())
             frontCamera = awaitOpenCamera(getFrontCameraId())
 
-            // 静止画撮影のやつ
-            imageReader = ImageReader.newInstance(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT, PixelFormat.RGBA_8888, 2)
-            // ImageReader の描画を OpenGL に、プレビューと同じ
-            recordOpenGlDrawPair = withContext(recordGlThreadDispatcher) {
-                createOpenGlDrawPair(surface = imageReader!!.surface)
+            // モードに応じて初期化を分岐
+            when (mode) {
+                CaptureMode.PICTURE -> initPictureMode()
+                CaptureMode.VIDEO -> initVideoMode()
             }
 
             // プレビューを開始する
@@ -148,8 +159,47 @@ class KomaDroidCameraManager(private val context: Context) {
         }
     }
 
+    /** 静止画モードの初期化 */
+    private suspend fun initPictureMode() {
+        imageReader = ImageReader.newInstance(
+            CAMERA_RESOLUTION_WIDTH,
+            CAMERA_RESOLUTION_HEIGHT,
+            PixelFormat.RGBA_8888,
+            2
+        )
+        // 描画を OpenGL に、プレビューと同じ
+        recordOpenGlDrawPair = withContext(recordGlThreadDispatcher) {
+            createOpenGlDrawPair(surface = imageReader!!.surface)
+        }
+    }
+
+    /** 録画モードの初期化 */
+    private suspend fun initVideoMode() {
+        mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setVideoSource(MediaRecorder.VideoSource.SURFACE)
+            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            setAudioChannels(2)
+            setVideoEncodingBitRate(3_000_000) // H.264 なので高めに
+            setVideoFrameRate(30)
+            setVideoSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+            setAudioEncodingBitRate(128_000)
+            setAudioSamplingRate(44_100)
+            // 一時的に getExternalFilesDir に保存する
+            saveVideoFile = File(context.getExternalFilesDir(null), "${System.currentTimeMillis()}.mp4")
+            setOutputFile(saveVideoFile!!)
+            prepare()
+        }
+        // 描画を OpenGL に、プレビューと同じ
+        recordOpenGlDrawPair = withContext(recordGlThreadDispatcher) {
+            createOpenGlDrawPair(surface = mediaRecorder!!.surface)
+        }
+    }
+
     /** プレビューを始める */
-    fun startPreview() {
+    private fun startPreview() {
         scope.launch {
             // キャンセルして、コルーチンが終わるのを待つ
             currentJob?.cancelAndJoin()
@@ -252,6 +302,83 @@ class KomaDroidCameraManager(private val context: Context) {
                 }
                 startPreview()
             }
+        }
+    }
+
+    /**
+     * 動画撮影をする
+     * 静止画撮影用に[CameraDevice.TEMPLATE_RECORD]と[CameraCaptureSession.setRepeatingRequest]が使われます。
+     */
+    fun startRecordVideo() {
+        scope.launch {
+            // キャンセルして、コルーチンが終わるのを待つ
+            currentJob?.cancelAndJoin()
+            currentJob = launch {
+                // プレビュー用 OpenGlDrawPair が使えるようになるのを待つ
+                val previewOpenGlDrawPair = previewOpenGlDrawPairFlow
+                    .filterNotNull()
+                    .first()
+
+                val frontCamera = frontCamera!!
+                val backCamera = backCamera!!
+                val recordOpenGlDrawPair = recordOpenGlDrawPair!!
+
+                // フロントカメラの設定
+                // 出力先
+                val frontCameraOutputList = listOfNotNull(
+                    previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
+                    recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface
+                )
+                val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                    frontCameraOutputList.forEach { surface -> addTarget(surface) }
+                }.build()
+                val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputList)
+                frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
+
+                // バックカメラの設定
+                val backCameraOutputList = listOfNotNull(
+                    previewOpenGlDrawPair.textureRenderer.backCameraInputSurface,
+                    recordOpenGlDrawPair.textureRenderer.backCameraInputSurface
+                )
+                val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                    backCameraOutputList.forEach { surface -> addTarget(surface) }
+                }.build()
+                val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
+                backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
+
+                // 録画開始
+                mediaRecorder?.start()
+                // 録画中はループする
+                loopRenderOpenGl(previewOpenGlDrawPair, recordOpenGlDrawPair)
+            }
+        }
+    }
+
+    /** [startRecordVideo]を終了する */
+    fun stopRecordVideo() {
+        scope.launch {
+            // キャンセルを投げる
+            currentJob?.cancelAndJoin()
+            mediaRecorder?.stop()
+            mediaRecorder?.release()
+            // 動画ファイルを動画フォルダへコピーさせ、ファイルを消す
+            withContext(Dispatchers.IO) {
+                val contentResolver = context.contentResolver
+                val contentValues = contentValuesOf(
+                    MediaStore.Images.Media.DISPLAY_NAME to saveVideoFile!!.name,
+                    MediaStore.Images.Media.RELATIVE_PATH to "${Environment.DIRECTORY_MOVIES}/KomaDroid"
+                )
+                val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)!!
+                saveVideoFile!!.inputStream().use { inputStream ->
+                    contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+                saveVideoFile!!.delete()
+            }
+            // stop したら使えないので、MediaRecorder を作り直してからプレビューに戻す
+            initVideoMode()
+            startPreview()
         }
     }
 
@@ -432,6 +559,15 @@ class KomaDroidCameraManager(private val context: Context) {
         val inputSurface: InputSurface,
         val textureRenderer: KomaDroidCameraTextureRenderer
     )
+
+    /** 静止画撮影 or 録画 */
+    enum class CaptureMode {
+        /** 静止画撮影 */
+        PICTURE,
+
+        /** 録画 */
+        VIDEO
+    }
 
     companion object {
         const val CAMERA_RESOLUTION_WIDTH = 720
