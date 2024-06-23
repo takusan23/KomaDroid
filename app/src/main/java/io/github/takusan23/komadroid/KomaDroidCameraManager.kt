@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.awaitClose
@@ -315,76 +316,86 @@ class KomaDroidCameraManager(
             currentJob?.cancelAndJoin()
             currentJob = launch {
                 // プレビュー用 OpenGlDrawPair が使えるようになるのを待つ
-                val previewOpenGlDrawPair = previewOpenGlDrawPairFlow
-                    .filterNotNull()
-                    .first()
+                // もし使えなくなった場合はキャンセルを投げてくれるように collectLatest
+                previewOpenGlDrawPairFlow.collectLatest { previewOpenGlDrawPair ->
 
-                val frontCamera = frontCamera!!
-                val backCamera = backCamera!!
-                val recordOpenGlDrawPair = recordOpenGlDrawPair!!
+                    // 使えないなら return
+                    if (previewOpenGlDrawPair == null) return@collectLatest
 
-                // フロントカメラの設定
-                // 出力先
-                val frontCameraOutputList = listOfNotNull(
-                    previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
-                    recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface
-                )
-                val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                    frontCameraOutputList.forEach { surface -> addTarget(surface) }
-                }.build()
-                val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputList)
-                frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
+                    val frontCamera = frontCamera!!
+                    val backCamera = backCamera!!
+                    val recordOpenGlDrawPair = recordOpenGlDrawPair!!
 
-                // バックカメラの設定
-                val backCameraOutputList = listOfNotNull(
-                    previewOpenGlDrawPair.textureRenderer.backCameraInputSurface,
-                    recordOpenGlDrawPair.textureRenderer.backCameraInputSurface
-                )
-                val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                    backCameraOutputList.forEach { surface -> addTarget(surface) }
-                }.build()
-                val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
-                backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
+                    // フロントカメラの設定
+                    // 出力先
+                    val frontCameraOutputList = listOfNotNull(
+                        previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
+                        recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface
+                    )
+                    val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                        frontCameraOutputList.forEach { surface -> addTarget(surface) }
+                    }.build()
+                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputList)
+                    frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
 
-                // 録画開始
-                mediaRecorder?.start()
-                // 録画中はループする
-                loopRenderOpenGl(previewOpenGlDrawPair, recordOpenGlDrawPair)
+                    // バックカメラの設定
+                    val backCameraOutputList = listOfNotNull(
+                        previewOpenGlDrawPair.textureRenderer.backCameraInputSurface,
+                        recordOpenGlDrawPair.textureRenderer.backCameraInputSurface
+                    )
+                    val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                        backCameraOutputList.forEach { surface -> addTarget(surface) }
+                    }.build()
+                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
+                    backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
+
+                    // 録画開始
+                    mediaRecorder?.start()
+                    try {
+                        // 録画中はループするのでこれ以降の処理には進まない
+                        loopRenderOpenGl(previewOpenGlDrawPair, recordOpenGlDrawPair)
+                    } finally {
+                        // 録画終了処理
+                        // stopRecordVideo を呼び出したときか、collectLatest から新しい値が来た時
+                        // キャンセルされた後、普通ならコルーチンが起動できない。
+                        // NonCancellable を付けることで起動できるが、今回のように終了処理のみで使いましょうね
+                        withContext(NonCancellable) {
+                            mediaRecorder?.stop()
+                            mediaRecorder?.release()
+                            // 動画ファイルを動画フォルダへコピーさせ、ファイルを消す
+                            withContext(Dispatchers.IO) {
+                                val contentResolver = context.contentResolver
+                                val contentValues = contentValuesOf(
+                                    MediaStore.Images.Media.DISPLAY_NAME to saveVideoFile!!.name,
+                                    MediaStore.Images.Media.RELATIVE_PATH to "${Environment.DIRECTORY_MOVIES}/KomaDroid"
+                                )
+                                val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)!!
+                                saveVideoFile!!.inputStream().use { inputStream ->
+                                    contentResolver.openOutputStream(uri)?.use { outputStream ->
+                                        inputStream.copyTo(outputStream)
+                                    }
+                                }
+                                saveVideoFile!!.delete()
+                            }
+                            // MediaRecorder は stop したら使えないので、MediaRecorder を作り直してからプレビューに戻す
+                            initVideoMode()
+                            startPreview()
+                        }
+                    }
+                }
             }
         }
     }
 
     /** [startRecordVideo]を終了する */
     fun stopRecordVideo() {
-        scope.launch {
-            // キャンセルを投げる
-            currentJob?.cancelAndJoin()
-            mediaRecorder?.stop()
-            mediaRecorder?.release()
-            // 動画ファイルを動画フォルダへコピーさせ、ファイルを消す
-            withContext(Dispatchers.IO) {
-                val contentResolver = context.contentResolver
-                val contentValues = contentValuesOf(
-                    MediaStore.Images.Media.DISPLAY_NAME to saveVideoFile!!.name,
-                    MediaStore.Images.Media.RELATIVE_PATH to "${Environment.DIRECTORY_MOVIES}/KomaDroid"
-                )
-                val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)!!
-                saveVideoFile!!.inputStream().use { inputStream ->
-                    contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        inputStream.copyTo(outputStream)
-                    }
-                }
-                saveVideoFile!!.delete()
-            }
-            // stop したら使えないので、MediaRecorder を作り直してからプレビューに戻す
-            initVideoMode()
-            startPreview()
-        }
+        // startRecordVideo の finally に進みます
+        currentJob?.cancel()
     }
 
     /**
      * [surface]を受け取って、[OpenGlDrawPair]を作る
-     * この関数は[previewOpenGlDrawPair]や[recordOpenGlDrawPair]等、OpenGL 用スレッドの中で呼び出す必要があります。
+     * この関数は[previewGlThreadDispatcher]や[recordGlThreadDispatcher]等、OpenGL 用スレッドの中で呼び出す必要があります。
      *
      * @param surface 描画先
      * @return [OpenGlDrawPair]
