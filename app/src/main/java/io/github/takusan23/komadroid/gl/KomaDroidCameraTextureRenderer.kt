@@ -182,12 +182,16 @@ class KomaDroidCameraTextureRenderer {
 
     /** フロントカメラ映像のテクスチャを更新する */
     fun updateFrontCameraTexture() {
-        frontCameraSurfaceTexture?.updateTexImage()
+        if (frontCameraSurfaceTexture?.isReleased == false) {
+            frontCameraSurfaceTexture?.updateTexImage()
+        }
     }
 
     /** バックカメラ映像のテクスチャを更新する */
     fun updateBackCameraTexture() {
-        backCameraSurfaceTexture?.updateTexImage()
+        if (backCameraSurfaceTexture?.isReleased == false) {
+            backCameraSurfaceTexture?.updateTexImage()
+        }
     }
 
     /** 描画する。GL スレッドから呼び出してください */
@@ -259,6 +263,8 @@ class KomaDroidCameraTextureRenderer {
     /** 破棄時に呼び出す */
     fun destroy() {
         scope.cancel()
+        isAvailableBackCameraFrame = false
+        isAvailableFrontCameraFrame = false
         frontCameraSurfaceTexture?.release()
         frontCameraInputSurface?.release()
         backCameraSurfaceTexture?.release()

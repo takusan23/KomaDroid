@@ -26,8 +26,6 @@ import io.github.takusan23.komadroid.KomaDroidCameraManager
 /** カメラ画面 */
 @Composable
 fun CameraScreen() {
-    val context = LocalContext.current
-
     // TODO これ静止画撮影と動画撮影でインスタンス分ける
     // どうやら、Google Tensor は一度でも GLES にバインドしたことのある Surface は他の GLES にはバインドできない
     // Surface そのままで、GLES だけ作り直すのができない。
@@ -87,7 +85,7 @@ private fun PictureModeScreen() {
 
     // カメラを開く、Composable が破棄されたら破棄する
     DisposableEffect(key1 = Unit) {
-        cameraManager.openCamera()
+        cameraManager.prepared()
         onDispose { cameraManager.destroy() }
     }
 
@@ -122,7 +120,7 @@ private fun VideoModeScreen() {
 
     // カメラを開く、Composable が破棄されたら破棄する
     DisposableEffect(key1 = Unit) {
-        cameraManager.openCamera()
+        cameraManager.prepared()
         onDispose { cameraManager.destroy() }
     }
 
