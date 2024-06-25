@@ -198,7 +198,7 @@ class KomaDroidCameraManager(
     )
 
     /** 用意をする */
-    fun prepared() {
+    fun prepare() {
         scope.launch {
             // モードに応じて初期化を分岐
             when (mode) {
@@ -264,7 +264,7 @@ class KomaDroidCameraManager(
             setAudioEncodingBitRate(128_000)
             setAudioSamplingRate(44_100)
             // 一時的に getExternalFilesDir に保存する
-            saveVideoFile = File(context.getExternalFilesDir(null), "${System.currentTimeMillis()}.mp4")
+            saveVideoFile = context.getExternalFilesDir(null)!!.resolve("${System.currentTimeMillis()}.mp4")
             setOutputFile(saveVideoFile!!)
             prepare()
         }
@@ -361,7 +361,7 @@ class KomaDroidCameraManager(
                 val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
                 backCameraCaptureSession?.capture(backCameraCaptureRequest, null, null)
 
-                // ImageReader に描画する
+                // ImageReader に OpenGL ES で描画する
                 withContext(recordGlThreadDispatcher) {
                     renderOpenGl(recordOpenGlDrawPair)
                 }
@@ -393,13 +393,13 @@ class KomaDroidCameraManager(
                     frontCameraFlow,
                     backCameraFlow,
                     previewOpenGlDrawPairFlow
-                ) { a, b, c -> Triple(a, b, c) }.collect { (frontCamera, backCamera, previewOpenGlDrawPair) ->
+                ) { a, b, c -> Triple(a, b, c) }.collectLatest { (frontCamera, backCamera, previewOpenGlDrawPair) ->
 
                     // フロントカメラ、バックカメラ、プレビューの OpenGL ES がすべて準備完了になるまで待つ
-                    frontCamera ?: return@collect
-                    backCamera ?: return@collect
-                    previewOpenGlDrawPair ?: return@collect
-                    val recordOpenGlDrawPair = recordOpenGlDrawPair ?: return@collect
+                    frontCamera ?: return@collectLatest
+                    backCamera ?: return@collectLatest
+                    previewOpenGlDrawPair ?: return@collectLatest
+                    val recordOpenGlDrawPair = recordOpenGlDrawPair ?: return@collectLatest
 
                     // フロントカメラの設定
                     // 出力先
@@ -427,6 +427,7 @@ class KomaDroidCameraManager(
                     // 録画開始
                     mediaRecorder?.start()
                     try {
+                        // MediaRecorder に OpenGL ES で描画
                         // 録画中はループするのでこれ以降の処理には進まない
                         withContext(recordGlThreadDispatcher) {
                             while (isActive) {

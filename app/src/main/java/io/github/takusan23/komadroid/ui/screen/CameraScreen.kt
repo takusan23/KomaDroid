@@ -85,7 +85,7 @@ private fun PictureModeScreen() {
 
     // カメラを開く、Composable が破棄されたら破棄する
     DisposableEffect(key1 = Unit) {
-        cameraManager.prepared()
+        cameraManager.prepare()
         onDispose { cameraManager.destroy() }
     }
 
@@ -120,7 +120,7 @@ private fun VideoModeScreen() {
 
     // カメラを開く、Composable が破棄されたら破棄する
     DisposableEffect(key1 = Unit) {
-        cameraManager.prepared()
+        cameraManager.prepare()
         onDispose { cameraManager.destroy() }
     }
 
