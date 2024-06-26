@@ -1,8 +1,10 @@
 package io.github.takusan23.komadroid.gl
 
+import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.opengl.GLUtils
 import android.opengl.Matrix
 import android.view.Surface
 import kotlinx.coroutines.CoroutineScope
@@ -34,6 +36,7 @@ class KomaDroidCameraTextureRenderer {
     private var sFrontCameraTextureHandle = 0
     private var sBackCameraTextureHandle = 0
     private var iDrawFrontCameraTextureHandle = 0
+    private var sSegmentedTextureHandle = 0
 
     // スレッドセーフに Bool 扱うため Mutex と CoroutineScope
     private val frameMutex = Mutex()
@@ -46,6 +49,7 @@ class KomaDroidCameraTextureRenderer {
     // カメラ映像は SurfaceTexture を経由してフラグメントシェーダーでテクスチャとして使える
     private var frontCameraTextureId = -1
     private var backCameraTextureId = -1
+    private var segmentedTextureId = -1
 
     // SurfaceTexture。カメラ映像をテクスチャとして使えるやつ
     private var frontCameraSurfaceTexture: SurfaceTexture? = null
@@ -102,11 +106,17 @@ class KomaDroidCameraTextureRenderer {
         if (iDrawFrontCameraTextureHandle == -1) {
             throw RuntimeException("Could not get attrib location for iDrawFrontCameraTexture")
         }
+        sSegmentedTextureHandle = GLES20.glGetUniformLocation(mProgram, "sSegmentedTexture")
+        checkGlError("glGetUniformLocation sSegmentedTexture")
+        if (sSegmentedTextureHandle == -1) {
+            throw RuntimeException("Could not get attrib location for sSegmentedTexture")
+        }
 
         // テクスチャ ID を払い出してもらう
-        // 前面カメラの映像、背面カメラの映像で2個分
-        val textures = IntArray(2)
-        GLES20.glGenTextures(2, textures, 0)
+        // 前面カメラの映像、背面カメラの映像で2個
+        // イメージセグメンテーション用にもう1個
+        val textures = IntArray(3)
+        GLES20.glGenTextures(3, textures, 0)
 
         // 1個目はフロントカメラ映像
         frontCameraTextureId = textures[0]
@@ -128,6 +138,14 @@ class KomaDroidCameraTextureRenderer {
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
         checkGlError("glTexParameter")
+
+        // 3個目はイメージセグメンテーションの結果
+        segmentedTextureId = textures[2]
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, segmentedTextureId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        checkGlError("glTexParameteri")
 
         // glGenTextures で作ったテクスチャは SurfaceTexture で使う
         // カメラ映像は Surface 経由で受け取る
@@ -194,6 +212,18 @@ class KomaDroidCameraTextureRenderer {
         }
     }
 
+    /**
+     * イメージセグメンテーションの結果を渡す
+     *
+     * @param segmentedBitmap MediaPipe から出てきたやつ
+     */
+    fun updateSegmentedBitmap(segmentedBitmap: Bitmap) {
+        // texImage2D、引数違いがいるので注意
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, segmentedTextureId)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, segmentedBitmap, 0)
+        checkGlError("GLUtils.texImage2D")
+    }
+
     /** 描画する。GL スレッドから呼び出してください */
     fun draw() {
         // Snapdragon だと glClear が無いと映像が乱れる
@@ -208,6 +238,7 @@ class KomaDroidCameraTextureRenderer {
         // テクスチャの ID をわたす
         GLES20.glUniform1i(sFrontCameraTextureHandle, 0) // GLES20.GL_TEXTURE0 なので 0
         GLES20.glUniform1i(sBackCameraTextureHandle, 1) // GLES20.GL_TEXTURE1 なので 1
+        GLES20.glUniform1i(sSegmentedTextureHandle, 2) // GLES20.GL_TEXTURE2 なので 2
         checkGlError("glUniform1i sFrontCameraTextureHandle sBackCameraTextureHandle")
 
         mTriangleVertices.position(TRIANGLE_VERTICES_DATA_POS_OFFSET)
@@ -245,9 +276,9 @@ class KomaDroidCameraTextureRenderer {
         // 右上に移動させる
         // Matrix.translateM(mMVPMatrix, 0, 1f - 0.3f, 1f - 0.3f, 1f)
         // 右下に移動なら
-        Matrix.translateM(mMVPMatrix, 0, 1f - 0.3f, -1f + 0.3f, 1f)
+        Matrix.translateM(mMVPMatrix, 0, 1f - 0.6f, -1f + 0.6f, 1f)
         // 半分ぐらいにする
-        Matrix.scaleM(mMVPMatrix, 0, 0.3f, 0.3f, 1f)
+        Matrix.scaleM(mMVPMatrix, 0, 0.6f, 0.6f, 1f)
         // アスペクト比、カメラ入力が1:1で、プレビューが16:9で歪むので、よく分からないけど Matrix.scaleM する。謎
         Matrix.scaleM(mMVPMatrix, 0, 1.7f, 1f, 1f)
 
@@ -352,19 +383,32 @@ uniform mat4 uSTMatrix;
 attribute vec4 aPosition;
 attribute vec4 aTextureCoord;
 varying vec2 vTextureCoord;
+varying vec2 vSegmentTextureCoord;
+
+// Matrix.setIdentityM()
+const mat4 uTextureSTMatrix = mat4(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+
 void main() {
   gl_Position = uMVPMatrix * aPosition;
   vTextureCoord = (uSTMatrix * aTextureCoord).xy;
+  
+  // vTextureCoord は SurfaceTexture 用なので、普通のテクスチャ描画用の vTextureCoord を作る
+  // またテクスチャ座標は反転しているので戻す
+  vSegmentTextureCoord = (uTextureSTMatrix * aTextureCoord).xy;
+  vSegmentTextureCoord = vec2(vSegmentTextureCoord.x, 1.-vSegmentTextureCoord.y);
 }
 """
 
         private const val FRAGMENT_SHADER = """
 #extension GL_OES_EGL_image_external : require
 precision mediump float;
-varying vec2 vTextureCoord;
 
+varying vec2 vTextureCoord;
 uniform samplerExternalOES sFrontCameraTexture;
 uniform samplerExternalOES sBackCameraTexture;
+
+varying vec2 vSegmentTextureCoord;
+uniform sampler2D sSegmentedTexture;
 
 // sFrontCameraTexture を描画する場合は 1。
 // sBackCameraTexture は 0。
@@ -378,7 +422,18 @@ void main() {
   if (bool(iDrawFrontCameraTexture)) {
     // フロントカメラ（自撮り）
     vec4 cameraColor = texture2D(sFrontCameraTexture, vTextureCoord); 
-    outColor = cameraColor;
+    // 推論結果の被写体の色
+    vec4 targetColor = vec4(0., 0., 1., 1.);
+    // 推論結果
+    vec4 segmentedColor = texture2D(sSegmentedTexture, vSegmentTextureCoord);
+    // 青色だったら discard。そうじゃなければフロントカメラの色を
+    // length でどれくらい似ているかが取れる（雑な説明）
+    if (.3 < length(targetColor - segmentedColor)) {
+      outColor = cameraColor;
+    } else {
+      // outColor = segmentedColor; // ブルーバックを出す
+      discard;
+    }
   } else {
     // バックカメラ（外側）
     vec4 cameraColor = texture2D(sBackCameraTexture, vTextureCoord);

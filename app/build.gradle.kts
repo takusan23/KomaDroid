@@ -47,6 +47,9 @@ android {
 }
 
 dependencies {
+    // Image Segmentation
+    // MediaPipe
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
