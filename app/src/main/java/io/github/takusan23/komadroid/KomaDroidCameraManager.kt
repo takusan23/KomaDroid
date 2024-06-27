@@ -211,15 +211,15 @@ class KomaDroidCameraManager(
                 textureRenderer.setSurfaceTextureSize(CAMERA_RESOLUTION_WIDTH / ANALYZE_DIV_SCALE, CAMERA_RESOLUTION_HEIGHT / ANALYZE_DIV_SCALE)
                 AnalyzeOpenGlDrawPair(inputSurface, textureRenderer)
             }
-            launch { prepareAndStartImageSegmentation() }
+            launch { startImageSegmentation() }
 
             // プレビューを開始する
             startPreview()
         }
     }
 
-    /** イメージセグメンテーションの用意と開始 */
-    private suspend fun prepareAndStartImageSegmentation() = coroutineScope {
+    /** イメージセグメンテーションの開始 */
+    private suspend fun startImageSegmentation() = coroutineScope {
         // MediaPipe
         val mediaPipeImageSegmentation = MediaPipeImageSegmentation(context)
 
@@ -398,7 +398,6 @@ class KomaDroidCameraManager(
                 }.build()
                 val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
                 backCameraCaptureSession?.capture(backCameraCaptureRequest, null, null)
-                backCameraCaptureSession?.close()
 
                 // ImageReader に OpenGL ES で描画する
                 withContext(recordGlThreadDispatcher) {
