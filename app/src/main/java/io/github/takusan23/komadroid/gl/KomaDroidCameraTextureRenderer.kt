@@ -425,7 +425,7 @@ void main() {
     // 推論結果の被写体の色
     vec4 targetColor = vec4(0., 0., 1., 1.);
     // 推論結果
-    vec4 segmentedColor = texture2D(sSegmentedTexture, vSegmentTextureCoord);
+    vec4 segmentedColor = texture2D(sSegmentedTexture, vTextureCoord);
     // 青色だったら discard。そうじゃなければフロントカメラの色を
     // length でどれくらい似ているかが取れる（雑な説明）
     if (.3 < length(targetColor - segmentedColor)) {

@@ -3,6 +3,8 @@ package io.github.takusan23.komadroid
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
 import android.graphics.PixelFormat
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
@@ -21,10 +23,8 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.core.content.contentValuesOf
-import androidx.core.graphics.scale
 import io.github.takusan23.komadroid.gl.InputSurface
 import io.github.takusan23.komadroid.gl.KomaDroidCameraTextureRenderer
-import io.github.takusan23.komadroid.gl.TextureCopyTextureRenderer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,6 +49,7 @@ import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 
@@ -151,18 +152,12 @@ class KomaDroidCameraManager(
      * width / height を半分以下にしているのはメモリ使用量を減らす目的と、
      * どうせ解析にクソデカい画像を入れても遅くなるだけなので、この段階で小さくしてしまう。
      */
-    private val analyzeImageReader = ImageReader.newInstance(
-        CAMERA_RESOLUTION_WIDTH / ANALYZE_DIV_SCALE,
-        CAMERA_RESOLUTION_HEIGHT / ANALYZE_DIV_SCALE,
-        PixelFormat.RGBA_8888,
-        2
-    )
-
-    /** [analyzeImageReader]用 GL スレッド */
-    private val analyzeGlThreadDispatcher = newSingleThreadContext("AnalyzeGlThread")
-
-    /** [analyzeImageReader]用[OpenGlDrawPair] */
-    private var analyzeOpenGlDrawPair: AnalyzeOpenGlDrawPair? = null
+    private val analyzeImageReader = ImageReader.newInstance(CAMERA_RESOLUTION_WIDTH / 4, CAMERA_RESOLUTION_HEIGHT / 4, ImageFormat.JPEG, 30)
+//    /** [analyzeImageReader]用 GL スレッド */
+//    private val analyzeGlThreadDispatcher = newSingleThreadContext("AnalyzeGlThread")
+//
+//    /** [analyzeImageReader]用[OpenGlDrawPair] */
+//    private var analyzeOpenGlDrawPair: AnalyzeOpenGlDrawPair? = null
 
     /** 用意をする */
     fun prepare() {
@@ -201,16 +196,6 @@ class KomaDroidCameraManager(
             // まず前面カメラのカメラ映像を ImageReader で受け取り、Bitmap にする
             // そのあと、イメージセグメンテーションの推論をして、結果を OpenGL ES へ渡す
             // OpenGL ES 側で描画する処理は、他のプレビューとかの描画ループ中に入れてもらうことにする。
-            analyzeOpenGlDrawPair = withContext(analyzeGlThreadDispatcher) {
-                // また、本当は ImageReader を Camera2 API に渡せばいいはずだが、プレビューが重たくなってしまった。
-                // OpenGL ES を経由すると改善したのでとりあえずそれで（謎）
-                val inputSurface = InputSurface(analyzeImageReader.surface)
-                val textureRenderer = TextureCopyTextureRenderer()
-                inputSurface.makeCurrent()
-                textureRenderer.createShader()
-                textureRenderer.setSurfaceTextureSize(CAMERA_RESOLUTION_WIDTH / ANALYZE_DIV_SCALE, CAMERA_RESOLUTION_HEIGHT / ANALYZE_DIV_SCALE)
-                AnalyzeOpenGlDrawPair(inputSurface, textureRenderer)
-            }
             launch { prepareAndStartImageSegmentation() }
 
             // プレビューを開始する
@@ -227,23 +212,10 @@ class KomaDroidCameraManager(
             listOf(
                 launch {
                     // カメラ映像を受け取って解析に投げる部分
-                    withContext(analyzeGlThreadDispatcher) {
-
-                        while (isActive) {
-                            if (analyzeOpenGlDrawPair?.textureRenderer?.isAvailableFrame() == true) {
-                                // カメラ映像テクスチャを更新して、描画
-                                analyzeOpenGlDrawPair?.textureRenderer?.updateCameraTexture()
-                                analyzeOpenGlDrawPair?.textureRenderer?.draw()
-                                analyzeOpenGlDrawPair?.inputSurface?.swapBuffers()
-                                // ImageReader で取りだして、MediaPipe のイメージセグメンテーションに投げる
-                                val bitmap = analyzeImageReader.acquireLatestImage()?.toRgbaBitmap(
-                                    imageReaderWidth = CAMERA_RESOLUTION_WIDTH / ANALYZE_DIV_SCALE,
-                                    imageReaderHeight = CAMERA_RESOLUTION_HEIGHT / ANALYZE_DIV_SCALE,
-                                )
-                                if (bitmap != null) {
-                                    mediaPipeImageSegmentation.segmentation(bitmap)
-                                }
-                            }
+                    while (isActive) {
+                        val bitmap = analyzeImageReader.acquireLatestImage()?.toJpegBitmap()
+                        if (bitmap != null) {
+                            mediaPipeImageSegmentation.segmentation(bitmap)
                         }
                     }
                 },
@@ -252,9 +224,6 @@ class KomaDroidCameraManager(
                     mediaPipeImageSegmentation
                         .segmentedBitmapFlow
                         .filterNotNull()
-                        // 多分サイズを合わせないと、1px くらいの細い線がでてしまう（サイズが違うから？）
-                        // 元のサイズに戻したほうがきれい。ただ、元の解像度のままイメージセグメンテーションに突っ込むと遅いので
-                        .map { smallBitmap -> smallBitmap.scale(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT) }
                         .collect { segmentedBitmap ->
                             withContext(previewGlThreadDispatcher) {
                                 previewOpenGlDrawPairFlow.value?.textureRenderer?.updateSegmentedBitmap(segmentedBitmap)
@@ -336,7 +305,7 @@ class KomaDroidCameraManager(
                     val frontCameraOutputList = listOfNotNull(
                         previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
                         recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
-                        analyzeOpenGlDrawPair?.textureRenderer?.inputSurface
+                        analyzeImageReader.surface
                     )
                     val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         frontCameraOutputList.forEach { surface -> addTarget(surface) }
@@ -380,7 +349,7 @@ class KomaDroidCameraManager(
                 val frontCameraOutputList = listOfNotNull(
                     previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
                     recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
-                    analyzeOpenGlDrawPair?.textureRenderer?.inputSurface
+                    analyzeImageReader.surface
                 )
                 val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                     frontCameraOutputList.forEach { surface -> addTarget(surface) }
@@ -445,7 +414,7 @@ class KomaDroidCameraManager(
                     val frontCameraOutputList = listOfNotNull(
                         previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
                         recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
-                        analyzeOpenGlDrawPair?.textureRenderer?.inputSurface
+                        analyzeImageReader.surface
                     )
                     val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                         frontCameraOutputList.forEach { surface -> addTarget(surface) }
@@ -613,11 +582,8 @@ class KomaDroidCameraManager(
         scope.cancel()
         recordOpenGlDrawPair?.textureRenderer?.destroy()
         recordOpenGlDrawPair?.inputSurface?.destroy()
-        analyzeOpenGlDrawPair?.textureRenderer?.destroy()
-        analyzeOpenGlDrawPair?.inputSurface?.destroy()
         previewGlThreadDispatcher.close()
         recordGlThreadDispatcher.close()
-        analyzeGlThreadDispatcher.close()
         frontCameraFlow.value?.close()
         backCameraFlow.value?.close()
         imageReader?.close()
@@ -653,6 +619,13 @@ class KomaDroidCameraManager(
         awaitClose { _cameraDevice?.close() }
     }
 
+    private suspend fun Image.toJpegBitmap() = withContext(Dispatchers.IO) {
+        val imageBuf: ByteBuffer = planes[0].buffer
+        val imageBytes = ByteArray(imageBuf.remaining())
+        imageBuf[imageBytes]
+        close()
+        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+    }
 
     /** フロントカメラの ID を返す */
     private fun getFrontCameraId(): String = cameraManager
@@ -673,11 +646,6 @@ class KomaDroidCameraManager(
         val textureRenderer: KomaDroidCameraTextureRenderer
     )
 
-    /** 解析用 [OpenGlDrawPair] */
-    private data class AnalyzeOpenGlDrawPair(
-        val inputSurface: InputSurface,
-        val textureRenderer: TextureCopyTextureRenderer
-    )
 
     /** 静止画撮影 or 録画 */
     enum class CaptureMode {
