@@ -3,6 +3,8 @@ package io.github.takusan23.komadroid
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
@@ -12,6 +14,7 @@ import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
 import android.media.MediaRecorder
+import android.opengl.Matrix
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -22,6 +25,8 @@ import android.widget.Toast
 import androidx.core.content.contentValuesOf
 import io.github.takusan23.komadroid.gl.InputSurface
 import io.github.takusan23.komadroid.gl.KomaDroidCameraTextureRenderer
+import io.github.takusan23.komadroid.gl2.AkariSurfaceTexture
+import io.github.takusan23.komadroid.gl2.AkariVideoProcessorRenderer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -143,6 +148,28 @@ class KomaDroidCameraManager(
         )
     */
 
+    private val previewSurfaceFlow = callbackFlow {
+        val callback = object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                trySend(holder)
+            }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                // do nothing
+            }
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                trySend(null)
+            }
+        }
+        surfaceView.holder.addCallback(callback)
+        awaitClose { surfaceView.holder.removeCallback(callback) }
+    }.stateIn(
+        scope = scope,
+        started = SharingStarted.Eagerly,
+        initialValue = null
+    )
+
     /**
      * [SurfaceView]へ OpenGL で描画できるやつ。
      * ただ、[SurfaceView]は生成と破棄の非同期コールバックを待つ必要があるため、このような[Flow]を使う羽目になっている。
@@ -151,10 +178,10 @@ class KomaDroidCameraManager(
      * また、[stateIn]でホットフローに変換し、[SurfaceView]のコールバックがいつ呼ばれても大丈夫にする。
      * [callbackFlow]はコールドフローで、collect するまで動かない、いつコールバックが呼ばれるかわからないため、今回はホットフローに変換している。
      */
-    private val previewOpenGlDrawPairFlow = callbackFlow {
+    private val previewOpenGlDrawPairFlow = callbackFlow<SurfaceHolder?> {
         val callback = object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
-                trySend(holder)
+                // trySend(holder)
             }
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -199,6 +226,91 @@ class KomaDroidCameraManager(
 
     /** 用意をする */
     fun prepare() {
+        scope.launch {
+            combine(
+                frontCameraFlow,
+                backCameraFlow,
+                previewSurfaceFlow
+            ) { a, b, c -> Triple(a, b, c) }.collectLatest { (frontCamera, backCamera, previewSurface) ->
+
+                frontCamera ?: return@collectLatest
+                backCamera ?: return@collectLatest
+                previewSurface ?: return@collectLatest
+
+                // GL コンテキストを作る
+                val inputSurface = InputSurface(previewSurface.surface)
+                val textureRenderer = AkariVideoProcessorRenderer(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+                // 用意
+                withContext(previewGlThreadDispatcher) {
+                    inputSurface.makeCurrent()
+                    textureRenderer.createShader()
+                }
+
+                // SurfaceTexture を作る
+                val frontCameraTexture = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genTextureId { texId -> AkariSurfaceTexture(texId) }
+                }
+                val backCameraTexture = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genTextureId { texId -> AkariSurfaceTexture(texId) }
+                }
+
+                // 解像度
+                frontCameraTexture.setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+                backCameraTexture.setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+
+                // フロントカメラの設定
+                // 出力先
+                val frontCameraOutputList = listOfNotNull(frontCameraTexture.surface)
+                val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                    frontCameraOutputList.forEach { surface -> addTarget(surface) }
+                }.build()
+                val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputList)
+                frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
+
+                // バックカメラの設定
+                val backCameraOutputList = listOfNotNull(backCameraTexture.surface)
+                val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                    backCameraOutputList.forEach { surface -> addTarget(surface) }
+                }.build()
+                val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
+                backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
+
+                val paint = Paint().apply {
+                    textSize = 50f
+                    color = Color.CYAN
+                }
+
+                // 描画
+                try {
+                    withContext(previewGlThreadDispatcher) {
+                        while (isActive) {
+                            textureRenderer.prepareDraw()
+                            textureRenderer.drawSurfaceTexture(backCameraTexture) { mvpMatrix ->
+                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                            }
+                            textureRenderer.drawSurfaceTexture(frontCameraTexture) { mvpMatrix ->
+                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+                            }
+                            textureRenderer.drawCanvas {
+                                drawText("Hello World", 100f, 100f, paint)
+                            }
+                            inputSurface.swapBuffers()
+                        }
+                    }
+                } finally {
+                    withContext(NonCancellable + previewGlThreadDispatcher) {
+                        frontCameraTexture.destroy()
+                        backCameraTexture.destroy()
+                        textureRenderer.destroy()
+                        inputSurface.destroy()
+                    }
+                }
+            }
+        }
+    }
+
+    fun prepare2() {
         scope.launch {
             // モードに応じて初期化を分岐
             when (mode) {
