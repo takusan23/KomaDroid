@@ -10,8 +10,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class AkariVideoProcessorRenderer(
-    width: Int,
-    height: Int
+    private val width: Int,
+    private val height: Int
 ) {
     private val mTriangleVertices = ByteBuffer.allocateDirect(mTriangleVerticesData.size * FLOAT_SIZE_BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer()
     private val mMVPMatrix = FloatArray(16)
@@ -25,11 +25,17 @@ class AkariVideoProcessorRenderer(
     // Uniform 変数のハンドル
     private var sSurfaceTextureHandle = 0
     private var sCanvasTextureHandle = 0
+    private var sFboTextureHandle = 0
     private var iDrawModeHandle = 0
 
     // テクスチャ ID
     private var surfaceTextureTextureId = 0
     private var canvasTextureTextureId = 0
+
+    // フレームバッファオブジェクト
+    private var fboTextureId = 0
+    private var framebuffer = 0
+    private var depthBuffer = 0
 
     // Canvas 描画のため Bitmap
     private val canvasBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -37,7 +43,6 @@ class AkariVideoProcessorRenderer(
 
     init {
         mTriangleVertices.put(mTriangleVerticesData).position(0)
-        //canvas.drawColor(Color.WHITE)
     }
 
     /**
@@ -79,6 +84,11 @@ class AkariVideoProcessorRenderer(
         if (sCanvasTextureHandle == -1) {
             throw RuntimeException("Could not get attrib location for sCanvasTexture")
         }
+        sFboTextureHandle = GLES20.glGetUniformLocation(mProgram, "sFboTexture")
+        checkGlError("glGetUniformLocation sFboTexture")
+        if (sFboTextureHandle == -1) {
+            throw RuntimeException("Could not get attrib location for sFboTexture")
+        }
         iDrawModeHandle = GLES20.glGetUniformLocation(mProgram, "iDrawMode")
         checkGlError("glGetUniformLocation iDrawMode")
         if (iDrawModeHandle == -1) {
@@ -115,6 +125,9 @@ class AkariVideoProcessorRenderer(
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
         checkGlError("glEnable GLES20.GL_BLEND")
+
+        // フレームバッファオブジェクトの用意
+        prepareFbo()
     }
 
     /**
@@ -136,7 +149,17 @@ class AkariVideoProcessorRenderer(
      * GL スレッドから呼び出すこと。
      */
     fun prepareDraw() {
+        // 多分いる
         GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT or GLES20.GL_COLOR_BUFFER_BIT)
+
+        // 描画する
+        // glError 1282 の原因とかになる
+        GLES20.glUseProgram(mProgram)
+        checkGlError("glUseProgram")
+
+        // FBO に描画する
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
+        checkGlError("glBindFramebuffer")
     }
 
     /**
@@ -159,12 +182,13 @@ class AkariVideoProcessorRenderer(
 
         // 描画する
         // glError 1282 の原因とかになる
-        GLES20.glUseProgram(mProgram)
-        checkGlError("glUseProgram")
+        // GLES20.glUseProgram(mProgram) // prepare で呼んでる
+        // checkGlError("glUseProgram") // prepare で呼んでる
 
         // テクスチャの ID をわたす
         GLES20.glUniform1i(sSurfaceTextureHandle, 0) // GLES20.GL_TEXTURE0
         GLES20.glUniform1i(sCanvasTextureHandle, 1) // GLES20.GL_TEXTURE1
+        GLES20.glUniform1i(sFboTextureHandle, 2) // GLES20.GL_TEXTURE2
         // モード切替
         GLES20.glUniform1i(iDrawModeHandle, FRAGMENT_SHADER_DRAW_MODE_CANVAS_BITMAP)
         checkGlError("glUniform1i sSurfaceTextureHandle sCanvasTextureHandle iDrawModeHandle")
@@ -209,12 +233,13 @@ class AkariVideoProcessorRenderer(
 
         // 描画する
         // glError 1282 の原因とかになる
-        GLES20.glUseProgram(mProgram)
-        checkGlError("glUseProgram")
+        // GLES20.glUseProgram(mProgram) // prepare で呼んでる
+        // checkGlError("glUseProgram") // prepare で呼んでる
 
         // テクスチャの ID をわたす
         GLES20.glUniform1i(sSurfaceTextureHandle, 0) // GLES20.GL_TEXTURE0
         GLES20.glUniform1i(sCanvasTextureHandle, 1) // GLES20.GL_TEXTURE1
+        GLES20.glUniform1i(sFboTextureHandle, 2) // GLES20.GL_TEXTURE2
         // モード切替
         GLES20.glUniform1i(iDrawModeHandle, FRAGMENT_SHADER_DRAW_MODE_SURFACE_TEXTURE)
         checkGlError("glUniform1i sSurfaceTextureHandle sCanvasTextureHandle iDrawModeHandle")
@@ -243,6 +268,41 @@ class AkariVideoProcessorRenderer(
         GLES20.glFinish()
     }
 
+    /** 別名 drawEnd */
+    fun drawFbo() {
+        // 描画先をデフォルトの FBO にして、Surface に描画されるように
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        checkGlError("glBindFramebuffer")
+
+        // テクスチャの ID をわたす
+        GLES20.glUniform1i(sSurfaceTextureHandle, 0) // GLES20.GL_TEXTURE0
+        GLES20.glUniform1i(sCanvasTextureHandle, 1) // GLES20.GL_TEXTURE1
+        GLES20.glUniform1i(sFboTextureHandle, 2) // GLES20.GL_TEXTURE2
+        // モード切替
+        GLES20.glUniform1i(iDrawModeHandle, FRAGMENT_SHADER_DRAW_MODE_FBO)
+        checkGlError("glUniform1i sSurfaceTextureHandle sCanvasTextureHandle iDrawModeHandle")
+
+        mTriangleVertices.position(TRIANGLE_VERTICES_DATA_POS_OFFSET)
+        GLES20.glVertexAttribPointer(maPositionHandle, 3, GLES20.GL_FLOAT, false, TRIANGLE_VERTICES_DATA_STRIDE_BYTES, mTriangleVertices)
+        checkGlError("glVertexAttribPointer maPosition")
+        GLES20.glEnableVertexAttribArray(maPositionHandle)
+        checkGlError("glEnableVertexAttribArray maPositionHandle")
+        mTriangleVertices.position(TRIANGLE_VERTICES_DATA_UV_OFFSET)
+        GLES20.glVertexAttribPointer(maTextureHandle, 2, GLES20.GL_FLOAT, false, TRIANGLE_VERTICES_DATA_STRIDE_BYTES, mTriangleVertices)
+        checkGlError("glVertexAttribPointer maTextureHandle")
+        GLES20.glEnableVertexAttribArray(maTextureHandle)
+        checkGlError("glEnableVertexAttribArray maTextureHandle")
+
+        Matrix.setIdentityM(mSTMatrix, 0)
+        Matrix.setIdentityM(mMVPMatrix, 0)
+
+        GLES20.glUniformMatrix4fv(muSTMatrixHandle, 1, false, mSTMatrix, 0)
+        GLES20.glUniformMatrix4fv(muMVPMatrixHandle, 1, false, mMVPMatrix, 0)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        checkGlError("glDrawArrays")
+        GLES20.glFinish()
+    }
+
     /** 破棄時に呼び出す */
     fun destroy() {
         //
@@ -253,6 +313,63 @@ class AkariVideoProcessorRenderer(
         if (error != GLES20.GL_NO_ERROR) {
             throw RuntimeException("$op: glError $error")
         }
+    }
+
+    private fun prepareFbo() {
+        // フレームバッファオブジェクトの保存先になるテクスチャを作成
+        val textures = IntArray(1)
+        GLES20.glGenTextures(1, textures, 0)
+        fboTextureId = textures.first()
+        checkGlError("fbo glGenTextures")
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, fboTextureId)
+        checkGlError("fbo glActiveTexture glBindTexture")
+
+        // テクスチャ ストレージの作成
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null)
+
+        // テクスチャの補完とか
+        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST.toFloat())
+        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR.toFloat())
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        checkGlError("fbo glTexParameter");
+
+        // フレームバッファオブジェクトを作り、テクスチャをバインドする
+        val frameBuffers = IntArray(1)
+        GLES20.glGenFramebuffers(1, frameBuffers, 0)
+        checkGlError("fbo glGenFramebuffers")
+        framebuffer = frameBuffers.first()
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
+        checkGlError("fbo glBindFramebuffer ")
+
+        // 深度バッファを作りバインドする
+        val depthBuffers = IntArray(1)
+        GLES20.glGenRenderbuffers(1, depthBuffers, 0)
+        checkGlError("fbo glGenRenderbuffers")
+        depthBuffer = depthBuffers.first()
+        GLES20.glBindRenderbuffer(GLES20.GL_RENDERBUFFER, depthBuffer)
+        checkGlError("fbo glBindRenderbuffer")
+
+        // 深度バッファ用のストレージを作る
+        GLES20.glRenderbufferStorage(GLES20.GL_RENDERBUFFER, GLES20.GL_DEPTH_COMPONENT16, width, height)
+        checkGlError("fbo glRenderbufferStorage")
+
+        // 深度バッファとテクスチャ (カラーバッファ) をフレームバッファオブジェクトにアタッチする
+        GLES20.glFramebufferRenderbuffer(GLES20.GL_FRAMEBUFFER, GLES20.GL_DEPTH_ATTACHMENT, GLES20.GL_RENDERBUFFER, depthBuffer)
+        checkGlError("fbo glFramebufferRenderbuffer")
+        GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, fboTextureId, 0)
+        checkGlError("fbo glFramebufferTexture2D")
+
+        // 完了したか確認
+        val status = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER)
+        if (status != GLES20.GL_FRAMEBUFFER_COMPLETE) {
+            throw RuntimeException("Framebuffer not complete, status = $status")
+        }
+
+        // デフォルトのフレームバッファに戻す
+        // 描画の際には glBindFramebuffer で FBO に描画できる
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
     }
 
     /**
@@ -339,6 +456,7 @@ void main() {
         // iDrawMode に渡す定数
         private const val FRAGMENT_SHADER_DRAW_MODE_SURFACE_TEXTURE = 1
         private const val FRAGMENT_SHADER_DRAW_MODE_CANVAS_BITMAP = 2
+        private const val FRAGMENT_SHADER_DRAW_MODE_FBO = 3
 
         private const val FRAGMENT_SHADER = """
 #extension GL_OES_EGL_image_external : require
@@ -346,11 +464,13 @@ precision mediump float;
 
 varying vec2 vTextureCoord;
 uniform sampler2D sCanvasTexture;
+uniform sampler2D sFboTexture;
 uniform samplerExternalOES sSurfaceTexture;
 
 // 何を描画するか
 // 1 SurfaceTexture（カメラや動画のデコード映像）
 // 2 Bitmap（テキストや画像を描画した Canvas）
+// 3 FBO
 uniform int iDrawMode;
 
 void main() { 
@@ -362,6 +482,9 @@ void main() {
   } else if (iDrawMode == 2) {
     // テクスチャ座標なので Y を反転
     outColor = texture2D(sCanvasTexture, vec2(vTextureCoord.x, 1.-vTextureCoord.y));
+  } else if (iDrawMode == 3) {
+    // テクスチャ座標なので Y を反転
+    outColor = texture2D(sFboTexture, vTextureCoord);
   }
 
   // 出力

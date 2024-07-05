@@ -237,6 +237,10 @@ class KomaDroidCameraManager(
                 backCamera ?: return@collectLatest
                 previewSurface ?: return@collectLatest
 
+                // OpenGL ES の glViewport を呼び出すか、これを呼び出すか。
+                // これがないと、FBO のサイズがズレてしまう（FBO 使う場合は glViewport をセットしないといけない）
+                previewSurface.setFixedSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+
                 // GL コンテキストを作る
                 val inputSurface = InputSurface(previewSurface.surface)
                 val textureRenderer = AkariVideoProcessorRenderer(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
@@ -295,6 +299,7 @@ class KomaDroidCameraManager(
                             textureRenderer.drawCanvas {
                                 drawText("Hello World", 100f, 100f, paint)
                             }
+                            textureRenderer.drawFbo()
                             inputSurface.swapBuffers()
                         }
                     }
