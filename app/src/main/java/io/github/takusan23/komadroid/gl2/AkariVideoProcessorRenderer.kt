@@ -145,19 +145,14 @@ class AkariVideoProcessorRenderer(
     }
 
     /**
-     * 描画前に呼び出す。
+     * 描画前に呼び出す。描画先を FBO にします。
      * GL スレッドから呼び出すこと。
      */
     fun prepareDraw() {
         // 多分いる
         GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT or GLES20.GL_COLOR_BUFFER_BIT)
 
-        // 描画する
-        // glError 1282 の原因とかになる
-        GLES20.glUseProgram(mProgram)
-        checkGlError("glUseProgram")
-
-        // FBO に描画する
+        // 描画先をフレームバッファオブジェクトに
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
         checkGlError("glBindFramebuffer")
     }
@@ -182,8 +177,8 @@ class AkariVideoProcessorRenderer(
 
         // 描画する
         // glError 1282 の原因とかになる
-        // GLES20.glUseProgram(mProgram) // prepare で呼んでる
-        // checkGlError("glUseProgram") // prepare で呼んでる
+        GLES20.glUseProgram(mProgram)
+        checkGlError("glUseProgram")
 
         // テクスチャの ID をわたす
         GLES20.glUniform1i(sSurfaceTextureHandle, 0) // GLES20.GL_TEXTURE0
@@ -233,8 +228,8 @@ class AkariVideoProcessorRenderer(
 
         // 描画する
         // glError 1282 の原因とかになる
-        // GLES20.glUseProgram(mProgram) // prepare で呼んでる
-        // checkGlError("glUseProgram") // prepare で呼んでる
+        GLES20.glUseProgram(mProgram)
+        checkGlError("glUseProgram")
 
         // テクスチャの ID をわたす
         GLES20.glUniform1i(sSurfaceTextureHandle, 0) // GLES20.GL_TEXTURE0
@@ -268,8 +263,11 @@ class AkariVideoProcessorRenderer(
         GLES20.glFinish()
     }
 
-    /** 別名 drawEnd */
-    fun drawFbo() {
+    /**
+     * 最後に呼び出す。
+     * フレームバッファオブジェクトのテクスチャを描画します。これでオフスクリーンで描画されてた内容が画面に表示されるはず。
+     */
+    fun drawEnd() {
         // 描画先をデフォルトの FBO にして、Surface に描画されるように
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
         checkGlError("glBindFramebuffer")
@@ -315,6 +313,11 @@ class AkariVideoProcessorRenderer(
         }
     }
 
+    /**
+     * フレームバッファオブジェクトの用意。やってる中身は grafika と同じ。
+     * OpenGL ES の SurfaceView / MediaCodec のサイズと同じ大きさで FBO のテクスチャを作ります
+     * [android.view.SurfaceHolder.setFixedSize]や[android.media.MediaFormat.KEY_WIDTH]参照
+     */
     private fun prepareFbo() {
         // フレームバッファオブジェクトの保存先になるテクスチャを作成
         val textures = IntArray(1)

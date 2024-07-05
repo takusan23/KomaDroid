@@ -299,7 +299,7 @@ class KomaDroidCameraManager(
                             textureRenderer.drawCanvas {
                                 drawText("Hello World", 100f, 100f, paint)
                             }
-                            textureRenderer.drawFbo()
+                            textureRenderer.drawEnd()
                             inputSurface.swapBuffers()
                         }
                     }
