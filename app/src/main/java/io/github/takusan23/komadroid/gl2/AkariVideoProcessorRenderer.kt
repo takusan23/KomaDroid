@@ -49,7 +49,7 @@ class AkariVideoProcessorRenderer(
      * バーテックスシェーダ、フラグメントシェーダーをコンパイルする。
      * GL スレッドから呼び出すこと。
      */
-    fun createShader() {
+    fun prepareShader() {
         mProgram = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
         if (mProgram == 0) {
             throw RuntimeException("failed creating program")
@@ -93,7 +93,6 @@ class AkariVideoProcessorRenderer(
         checkGlError("glGetUniformLocation iDrawMode")
         if (iDrawModeHandle == -1) {
             throw RuntimeException("Could not get attrib location for iDrawMode")
-
         }
 
         // テクスチャ ID を払い出してもらう
@@ -144,6 +143,11 @@ class AkariVideoProcessorRenderer(
         return action(textures.first())
     }
 
+    /** [AkariEffectFragmentShader]を作りやすくするためだけのやつ */
+    fun <T> genEffect(action: (width: Int, height: Int) -> T): T {
+        return action(width, height)
+    }
+
     /**
      * 描画前に呼び出す。描画先を FBO にします。
      * GL スレッドから呼び出すこと。
@@ -171,7 +175,6 @@ class AkariVideoProcessorRenderer(
 
         // テクスチャを転送
         // texImage2D、引数違いがいるので注意
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, canvasTextureTextureId)
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, canvasBitmap, 0)
         checkGlError("GLUtils.texImage2D")
 
@@ -261,6 +264,19 @@ class AkariVideoProcessorRenderer(
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         checkGlError("glDrawArrays")
         GLES20.glFinish()
+    }
+
+    /**
+     * エフェクトを適用する。
+     * GL スレッドから呼び出すこと。
+     */
+    fun applyEffect(effectFragmentShader: AkariEffectFragmentShader) {
+        // FBO のテクスチャ ID を渡して描画
+        effectFragmentShader.applyEffect(2) // GLES20.GL_TEXTURE2
+
+        // プログラム（シェーダー）を戻す
+        GLES20.glUseProgram(mProgram)
+        checkGlError("glUseProgram")
     }
 
     /**
@@ -486,7 +502,6 @@ void main() {
     // テクスチャ座標なので Y を反転
     outColor = texture2D(sCanvasTexture, vec2(vTextureCoord.x, 1.-vTextureCoord.y));
   } else if (iDrawMode == 3) {
-    // テクスチャ座標なので Y を反転
     outColor = texture2D(sFboTexture, vTextureCoord);
   }
 

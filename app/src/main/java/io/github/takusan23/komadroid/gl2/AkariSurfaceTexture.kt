@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.first
  *
  * @param initTexId SurfaceTexture 作成時に TexId を作らないといけないので、多分どの GL Context でも良い（アタッチで変えられる）
  */
-class AkariSurfaceTexture(val initTexId: Int) {
+class AkariSurfaceTexture(private val initTexId: Int) {
 
     private val surfaceTexture = SurfaceTexture(initTexId)
     private val _isAvailableFrameFlow = MutableStateFlow(false)

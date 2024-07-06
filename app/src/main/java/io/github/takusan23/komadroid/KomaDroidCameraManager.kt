@@ -25,6 +25,7 @@ import android.widget.Toast
 import androidx.core.content.contentValuesOf
 import io.github.takusan23.komadroid.gl.InputSurface
 import io.github.takusan23.komadroid.gl.KomaDroidCameraTextureRenderer
+import io.github.takusan23.komadroid.gl2.AkariEffectFragmentShader
 import io.github.takusan23.komadroid.gl2.AkariSurfaceTexture
 import io.github.takusan23.komadroid.gl2.AkariVideoProcessorRenderer
 import kotlinx.coroutines.CoroutineScope
@@ -247,7 +248,7 @@ class KomaDroidCameraManager(
                 // 用意
                 withContext(previewGlThreadDispatcher) {
                     inputSurface.makeCurrent()
-                    textureRenderer.createShader()
+                    textureRenderer.prepareShader()
                 }
 
                 // SurfaceTexture を作る
@@ -256,6 +257,14 @@ class KomaDroidCameraManager(
                 }
                 val backCameraTexture = withContext(previewGlThreadDispatcher) {
                     textureRenderer.genTextureId { texId -> AkariSurfaceTexture(texId) }
+                }
+
+                // エフェクト
+                val effectShader = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genEffect { width, height -> AkariEffectFragmentShader(width, height) }
+                }
+                withContext(previewGlThreadDispatcher) {
+                    effectShader.prepareShader()
                 }
 
                 // 解像度
@@ -299,6 +308,7 @@ class KomaDroidCameraManager(
                             textureRenderer.drawCanvas {
                                 drawText("Hello World", 100f, 100f, paint)
                             }
+                            textureRenderer.applyEffect(effectShader)
                             textureRenderer.drawEnd()
                             inputSurface.swapBuffers()
                         }
@@ -307,6 +317,7 @@ class KomaDroidCameraManager(
                     withContext(NonCancellable + previewGlThreadDispatcher) {
                         frontCameraTexture.destroy()
                         backCameraTexture.destroy()
+                        effectShader.destroy()
                         textureRenderer.destroy()
                         inputSurface.destroy()
                     }
