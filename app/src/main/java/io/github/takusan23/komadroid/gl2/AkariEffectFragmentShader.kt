@@ -4,7 +4,15 @@ import android.opengl.GLES20
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class AkariEffectFragmentShader(private val width: Int, private val height: Int) {
+class AkariEffectFragmentShader(
+    private val width: Int,
+    private val height: Int,
+    private val xStart: Float,
+    private val xEnd: Float,
+    private val yStart: Float,
+    private val yEnd: Float,
+    private val fragmentShaderCode: String
+) {
 
     private val mTriangleVertices = ByteBuffer.allocateDirect(mTriangleVerticesData.size * FLOAT_SIZE_BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer()
     private var mProgram = 0
@@ -22,7 +30,7 @@ class AkariEffectFragmentShader(private val width: Int, private val height: Int)
     /** 準備する */
     fun prepareShader() {
         // シェーダーのコンパイル
-        mProgram = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
+        mProgram = createProgram(VERTEX_SHADER, fragmentShaderCode)
         if (mProgram == 0) {
             throw RuntimeException("failed creating program")
         }
@@ -70,7 +78,8 @@ class AkariEffectFragmentShader(private val width: Int, private val height: Int)
         // 解像度
         GLES20.glUniform2f(vResolutionHandle, width.toFloat(), height.toFloat())
         // エフェクトの範囲
-        GLES20.glUniform4f(vCropLocationHandle, 0.3f, 0.3f, 0.6f, 0.6f)
+        // Y 座標はテクスチャ座標が反転しているため、意図的にやっている。コーディングミスではない
+        GLES20.glUniform4f(vCropLocationHandle, xStart, xEnd, 1f - yEnd, 1f - yStart)
         checkGlError("glUniform1i glUniform2f glUniform4f")
 
         mTriangleVertices.position(TRIANGLE_VERTICES_DATA_POS_OFFSET)
@@ -171,34 +180,6 @@ void main() {
   gl_Position = a_position;
 }
 """
-
-        private const val FRAGMENT_SHADER = """
-precision mediump float;
-
-uniform vec2 vResolution;
-uniform vec4 vCropLocation;
-uniform sampler2D sVideoFrameTexture;
-
-void main() {
-  // テクスチャ座標に変換
-  vec2 vTextureCoord = gl_FragCoord.xy / vResolution.xy;
-  // 出力色
-  vec4 outColor = vec4(1.);
-
-  // 範囲内だけ
-  if (vCropLocation[0] < vTextureCoord.x && vCropLocation[1] < vTextureCoord.y && vCropLocation[2] > vTextureCoord.x && vCropLocation[3] > vTextureCoord.y) {
-    // モザイクしてみる
-    vTextureCoord = floor(vTextureCoord * 15.0) / 15.0;
-    outColor = texture2D(sVideoFrameTexture, vTextureCoord);
-  } else {
-    outColor = texture2D(sVideoFrameTexture, vTextureCoord);
-  }
-
-  // 出力
-  gl_FragColor = outColor;
-}
-"""
-
     }
 
 }

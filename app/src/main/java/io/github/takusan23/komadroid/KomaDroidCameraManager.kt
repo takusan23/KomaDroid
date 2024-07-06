@@ -14,6 +14,7 @@ import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
 import android.media.MediaRecorder
+import android.opengl.GLES20
 import android.opengl.Matrix
 import android.os.Build
 import android.os.Environment
@@ -28,6 +29,7 @@ import io.github.takusan23.komadroid.gl.KomaDroidCameraTextureRenderer
 import io.github.takusan23.komadroid.gl2.AkariEffectFragmentShader
 import io.github.takusan23.komadroid.gl2.AkariSurfaceTexture
 import io.github.takusan23.komadroid.gl2.AkariVideoProcessorRenderer
+import io.github.takusan23.komadroid.gl2.EffectFragmentShaderExample
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -249,6 +251,7 @@ class KomaDroidCameraManager(
                 withContext(previewGlThreadDispatcher) {
                     inputSurface.makeCurrent()
                     textureRenderer.prepareShader()
+                    GLES20.glViewport(0, 0, CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT) // 多分いる
                 }
 
                 // SurfaceTexture を作る
@@ -260,11 +263,36 @@ class KomaDroidCameraManager(
                 }
 
                 // エフェクト
-                val effectShader = withContext(previewGlThreadDispatcher) {
-                    textureRenderer.genEffect { width, height -> AkariEffectFragmentShader(width, height) }
+                val mosaicEffect = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genEffect { width, height ->
+                        AkariEffectFragmentShader(
+                            width = width,
+                            height = height,
+                            xStart = 0.3f,
+                            xEnd = 0.6f,
+                            yStart = 0.3f,
+                            yEnd = 0.6f,
+                            fragmentShaderCode = EffectFragmentShaderExample.FRAGMENT_SHADER_MOSAIC
+                        )
+                    }
                 }
+                val blurEffect = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genEffect { width, height ->
+                        AkariEffectFragmentShader(
+                            width = width,
+                            height = height,
+                            xStart = 0.0f,
+                            xEnd = 1.0f,
+                            yStart = 0.0f,
+                            yEnd = 0.3f,
+                            fragmentShaderCode = EffectFragmentShaderExample.FRAGMENT_SHADER_BLUR
+                        )
+                    }
+                }
+
                 withContext(previewGlThreadDispatcher) {
-                    effectShader.prepareShader()
+                    mosaicEffect.prepareShader()
+                    blurEffect.prepareShader()
                 }
 
                 // 解像度
@@ -308,7 +336,8 @@ class KomaDroidCameraManager(
                             textureRenderer.drawCanvas {
                                 drawText("Hello World", 100f, 100f, paint)
                             }
-                            textureRenderer.applyEffect(effectShader)
+                            textureRenderer.applyEffect(mosaicEffect)
+                            textureRenderer.applyEffect(blurEffect)
                             textureRenderer.drawEnd()
                             inputSurface.swapBuffers()
                         }
@@ -317,7 +346,8 @@ class KomaDroidCameraManager(
                     withContext(NonCancellable + previewGlThreadDispatcher) {
                         frontCameraTexture.destroy()
                         backCameraTexture.destroy()
-                        effectShader.destroy()
+                        mosaicEffect.destroy()
+                        blurEffect.destroy()
                         textureRenderer.destroy()
                         inputSurface.destroy()
                     }
