@@ -271,7 +271,7 @@ class AkariVideoProcessorRenderer(
      * GL スレッドから呼び出すこと。
      */
     fun applyEffect(effectFragmentShader: AkariEffectFragmentShader) {
-        // FBO のテクスチャ ID を渡して描画
+        // FBO のテクスチャユニットを渡して描画
         effectFragmentShader.applyEffect(2) // GLES20.GL_TEXTURE2
 
         // プログラム（シェーダー）を戻す
