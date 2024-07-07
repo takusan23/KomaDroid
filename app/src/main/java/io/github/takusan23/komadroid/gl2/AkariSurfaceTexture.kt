@@ -11,17 +11,17 @@ import kotlinx.coroutines.flow.first
  * SurfaceTexture を[AkariVideoProcessorPlusGl]で使うため使いやすくしただけのクラス。
  * コンストラクタはどのスレッドからでも作れるはず。
  *
- * このクラスのインスタンスを作るためには、[initTexId]が引数で、そのテクスチャ ID の作成には glGenTextures が必要で、そのためには GL コンテキストを準備する必要がある。
- * 幸いにも、GL コンテキストとテクスチャ ID は生成後に変更できるため、
+ * このクラスのインスタンスを作るためには、[initTexName]が引数で、そのテクスチャ作成には[GLES20.glGenTextures]が必要で、そのためには GL コンテキストを準備する必要がある。
+ * 幸いにも、GL コンテキストとテクスチャは生成後に変更できるため、
  * コンストラクタに渡すテクスチャ ID はどの GL コンテキストでも大丈夫だと思う。
  *
- * 実際に描画する際は、[attachToGLContext]でテクスチャ ID を指定するので、本当にコンストラクタの方は関係ないテクスチャ ID でいいはず。
+ * 実際に描画する際は、[attachGl]でテクスチャを指定するので、本当にコンストラクタの方は関係ないテクスチャでいいはず。
  *
- * @param initTexId SurfaceTexture 作成時に TexId を作らないといけないので、多分どの GL Context でも良い（アタッチで変えられる）
+ * @param initTexName SurfaceTexture 作成時にテクスチャを作らないといけないので。多分どの GL Context でも良い（アタッチで変えられる）
  */
-class AkariSurfaceTexture(private val initTexId: Int) {
+class AkariSurfaceTexture(private val initTexName: Int) {
 
-    private val surfaceTexture = SurfaceTexture(initTexId)
+    private val surfaceTexture = SurfaceTexture(initTexName)
     private val _isAvailableFrameFlow = MutableStateFlow(false)
 
     /** SurfaceTexture から新しいフレームが来ているかの Flow */
@@ -49,11 +49,11 @@ class AkariSurfaceTexture(private val initTexId: Int) {
      * GL コンテキストを切り替え、テクスチャ ID の変更を行う。
      * GL スレッドから呼び出すこと。
      *
-     * @param texId テクスチャ ID
+     * @param texName テクスチャ
      */
-    fun attachGl(texId: Int) {
+    fun attachGl(texName: Int) {
         surfaceTexture.detachFromGLContext()
-        surfaceTexture.attachToGLContext(texId)
+        surfaceTexture.attachToGLContext(texName)
     }
 
     /** 新しいフレームが来るまで待って、[SurfaceTexture.updateTexImage]を呼び出す */
@@ -88,7 +88,7 @@ class AkariSurfaceTexture(private val initTexId: Int) {
      * GL スレッドから呼び出すこと（テクスチャを破棄したい）
      */
     fun destroy() {
-        val textures = intArrayOf(initTexId)
+        val textures = intArrayOf(initTexName)
         GLES20.glDeleteTextures(1, textures, 0)
         surface.release()
         surfaceTexture.release()

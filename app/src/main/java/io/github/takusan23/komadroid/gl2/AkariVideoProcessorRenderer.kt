@@ -216,7 +216,7 @@ class AkariVideoProcessorRenderer(
      * SurfaceTexture を描画する。
      * GL スレッドから呼び出すこと。
      */
-    suspend fun drawSurfaceTexture(
+    fun drawSurfaceTexture(
         akariSurfaceTexture: AkariSurfaceTexture,
         onTransform: ((mvpMatrix: FloatArray) -> Unit)? = null
     ) {
@@ -226,7 +226,7 @@ class AkariVideoProcessorRenderer(
 
         // 映像を OpenGL ES で使う準備
         akariSurfaceTexture.attachGl(surfaceTextureTextureId)
-        akariSurfaceTexture.awaitUpdateTexImage()
+        akariSurfaceTexture.checkAndUpdateTexImage()
         akariSurfaceTexture.getTransformMatrix(mSTMatrix)
 
         // 描画する

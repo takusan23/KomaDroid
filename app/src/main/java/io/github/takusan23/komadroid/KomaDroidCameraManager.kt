@@ -28,6 +28,7 @@ import io.github.takusan23.komadroid.gl.InputSurface
 import io.github.takusan23.komadroid.gl.KomaDroidCameraTextureRenderer
 import io.github.takusan23.komadroid.gl2.AkariEffectFragmentShader
 import io.github.takusan23.komadroid.gl2.AkariSurfaceTexture
+import io.github.takusan23.komadroid.gl2.AkariVideoFrameTexture
 import io.github.takusan23.komadroid.gl2.AkariVideoProcessorRenderer
 import io.github.takusan23.komadroid.gl2.EffectFragmentShaderExample
 import kotlinx.coroutines.CoroutineScope
@@ -289,11 +290,18 @@ class KomaDroidCameraManager(
                         )
                     }
                 }
-
                 withContext(previewGlThreadDispatcher) {
                     mosaicEffect.prepareShader()
                     blurEffect.prepareShader()
                 }
+
+                // 動画
+                val videoPath = context.getExternalFilesDir(null)?.resolve("bbb.mp4")!!
+                val akariVideoFrameTexture = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genTextureId { texId -> AkariVideoFrameTexture(texId) }
+                }
+                akariVideoFrameTexture.prepareDecoder(videoPath.path)
+                akariVideoFrameTexture.play()
 
                 // 解像度
                 frontCameraTexture.setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
@@ -333,11 +341,17 @@ class KomaDroidCameraManager(
                                 Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
                                 Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
                             }
+                            textureRenderer.drawSurfaceTexture(akariVideoFrameTexture.akariSurfaceTexture) { mvpMatrix ->
+                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                Matrix.scaleM(mvpMatrix, 0, 0.2f, 0.2f, 0.2f)
+                                Matrix.translateM(mvpMatrix, 0, 0.5f, -3f, 1f)
+                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                            }
                             textureRenderer.drawCanvas {
                                 drawText("Hello World", 100f, 100f, paint)
                             }
                             textureRenderer.applyEffect(mosaicEffect)
-                            textureRenderer.applyEffect(blurEffect)
+                            // textureRenderer.applyEffect(blurEffect)
                             textureRenderer.drawEnd()
                             inputSurface.swapBuffers()
                         }
@@ -348,6 +362,7 @@ class KomaDroidCameraManager(
                         backCameraTexture.destroy()
                         mosaicEffect.destroy()
                         blurEffect.destroy()
+                        akariVideoFrameTexture.destroy()
                         textureRenderer.destroy()
                         inputSurface.destroy()
                     }
