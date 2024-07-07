@@ -28,6 +28,7 @@ import io.github.takusan23.komadroid.gl.InputSurface
 import io.github.takusan23.komadroid.gl.KomaDroidCameraTextureRenderer
 import io.github.takusan23.komadroid.gl2.AkariEffectFragmentShader
 import io.github.takusan23.komadroid.gl2.AkariSurfaceTexture
+import io.github.takusan23.komadroid.gl2.AkariVideoEncoder
 import io.github.takusan23.komadroid.gl2.AkariVideoFrameTexture
 import io.github.takusan23.komadroid.gl2.AkariVideoProcessorRenderer
 import io.github.takusan23.komadroid.gl2.EffectFragmentShaderExample
@@ -52,6 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
@@ -230,6 +232,11 @@ class KomaDroidCameraManager(
 
     /** 用意をする */
     fun prepare() {
+        // prepareAkariVideoProcessorPreview()
+        prepareAkariVideoProcessorEncode()
+    }
+
+    private fun prepareAkariVideoProcessorPreview() {
         scope.launch {
             combine(
                 frontCameraFlow,
@@ -332,7 +339,9 @@ class KomaDroidCameraManager(
                 // 描画
                 try {
                     withContext(previewGlThreadDispatcher) {
+                        var rotate = 0f
                         while (isActive) {
+                            rotate++
                             textureRenderer.prepareDraw()
                             textureRenderer.drawSurfaceTexture(backCameraTexture) { mvpMatrix ->
                                 Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
@@ -346,11 +355,12 @@ class KomaDroidCameraManager(
                                 Matrix.scaleM(mvpMatrix, 0, 0.2f, 0.2f, 0.2f)
                                 Matrix.translateM(mvpMatrix, 0, 0.5f, -3f, 1f)
                                 Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                Matrix.rotateM(mvpMatrix, 0, rotate, 0f, 0f, 1f)
                             }
                             textureRenderer.drawCanvas {
                                 drawText("Hello World", 100f, 100f, paint)
                             }
-                            textureRenderer.applyEffect(mosaicEffect)
+                            // textureRenderer.applyEffect(mosaicEffect)
                             // textureRenderer.applyEffect(blurEffect)
                             textureRenderer.drawEnd()
                             inputSurface.swapBuffers()
@@ -365,6 +375,164 @@ class KomaDroidCameraManager(
                         akariVideoFrameTexture.destroy()
                         textureRenderer.destroy()
                         inputSurface.destroy()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun prepareAkariVideoProcessorEncode() {
+        scope.launch {
+            combine(
+                frontCameraFlow,
+                backCameraFlow,
+            ) { a, b -> a to b }.collectLatest { (frontCamera, backCamera) ->
+
+                frontCamera ?: return@collectLatest
+                backCamera ?: return@collectLatest
+
+                // 録画するやつ
+                val encoder = AkariVideoEncoder()
+                val saveFile = context.getExternalFilesDir(null)!!.resolve("akari_video_record_${System.currentTimeMillis()}.mp4")
+                encoder.prepare(outputFilePath = saveFile.path, outputVideoWidth = 720, outputVideoHeight = 1280)
+
+                // GL コンテキストを作る
+                val inputSurface = InputSurface(encoder.inputSurface)
+                val textureRenderer = AkariVideoProcessorRenderer(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+                // 用意
+                withContext(previewGlThreadDispatcher) {
+                    inputSurface.makeCurrent()
+                    textureRenderer.prepareShader()
+                }
+
+                // SurfaceTexture を作る
+                val frontCameraTexture = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genTextureId { texId -> AkariSurfaceTexture(texId) }
+                }
+                val backCameraTexture = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genTextureId { texId -> AkariSurfaceTexture(texId) }
+                }
+
+                // エフェクト
+                val mosaicEffect = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genEffect { width, height ->
+                        AkariEffectFragmentShader(
+                            width = width,
+                            height = height,
+                            xStart = 0.3f,
+                            xEnd = 0.6f,
+                            yStart = 0.3f,
+                            yEnd = 0.6f,
+                            fragmentShaderCode = EffectFragmentShaderExample.FRAGMENT_SHADER_MOSAIC
+                        )
+                    }
+                }
+                val blurEffect = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genEffect { width, height ->
+                        AkariEffectFragmentShader(
+                            width = width,
+                            height = height,
+                            xStart = 0.0f,
+                            xEnd = 1.0f,
+                            yStart = 0.0f,
+                            yEnd = 0.3f,
+                            fragmentShaderCode = EffectFragmentShaderExample.FRAGMENT_SHADER_BLUR
+                        )
+                    }
+                }
+                withContext(previewGlThreadDispatcher) {
+                    mosaicEffect.prepareShader()
+                    blurEffect.prepareShader()
+                }
+
+                // 動画
+                val videoPath = context.getExternalFilesDir(null)?.resolve("bbb.mp4")!!
+                val akariVideoFrameTexture = withContext(previewGlThreadDispatcher) {
+                    textureRenderer.genTextureId { texId -> AkariVideoFrameTexture(texId) }
+                }
+                akariVideoFrameTexture.prepareDecoder(videoPath.path)
+                akariVideoFrameTexture.play()
+
+                // 解像度
+                frontCameraTexture.setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+                backCameraTexture.setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+
+                // フロントカメラの設定
+                // 出力先
+                val frontCameraOutputList = listOfNotNull(frontCameraTexture.surface)
+                val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                    frontCameraOutputList.forEach { surface -> addTarget(surface) }
+                }.build()
+                val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputList)
+                frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
+
+                // バックカメラの設定
+                val backCameraOutputList = listOfNotNull(backCameraTexture.surface)
+                val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                    backCameraOutputList.forEach { surface -> addTarget(surface) }
+                }.build()
+                val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
+                backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
+
+                val paint = Paint().apply {
+                    textSize = 50f
+                    color = Color.CYAN
+                }
+
+                // 描画
+                try {
+                    // 録画
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "録画開始", Toast.LENGTH_SHORT).show()
+                    }
+                    encoder.start()
+
+                    // 20 秒
+                    withTimeoutOrNull(20_000) {
+                        withContext(previewGlThreadDispatcher) {
+                            var rotate = 0f
+                            while (isActive) {
+                                rotate++
+                                textureRenderer.prepareDraw()
+                                textureRenderer.drawSurfaceTexture(backCameraTexture) { mvpMatrix ->
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                }
+                                textureRenderer.drawSurfaceTexture(frontCameraTexture) { mvpMatrix ->
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                    Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+                                }
+                                textureRenderer.drawSurfaceTexture(akariVideoFrameTexture.akariSurfaceTexture) { mvpMatrix ->
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                    Matrix.scaleM(mvpMatrix, 0, 0.2f, 0.2f, 0.2f)
+                                    Matrix.translateM(mvpMatrix, 0, 0.5f, -3f, 1f)
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                    Matrix.rotateM(mvpMatrix, 0, rotate, 0f, 0f, 1f)
+                                }
+                                textureRenderer.drawCanvas {
+                                    drawText("Hello World", 100f, 100f, paint)
+                                }
+                                textureRenderer.applyEffect(mosaicEffect)
+                                // textureRenderer.applyEffect(blurEffect)
+                                textureRenderer.drawEnd()
+                                inputSurface.swapBuffers()
+                            }
+                        }
+                    }
+                } finally {
+                    withContext(NonCancellable + previewGlThreadDispatcher) {
+                        frontCameraTexture.destroy()
+                        backCameraTexture.destroy()
+                        mosaicEffect.destroy()
+                        blurEffect.destroy()
+                        akariVideoFrameTexture.destroy()
+                        textureRenderer.destroy()
+                        inputSurface.destroy()
+                        // 録画終了処理
+                        encoder.stop()
+                        encoder.destroy()
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "録画終了", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
