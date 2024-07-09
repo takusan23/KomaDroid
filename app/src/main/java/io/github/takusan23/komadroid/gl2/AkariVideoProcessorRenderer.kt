@@ -2,6 +2,7 @@ package io.github.takusan23.komadroid.gl2
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.PorterDuff
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLUtils
@@ -166,6 +167,8 @@ class AkariVideoProcessorRenderer(
      * GL スレッドから呼び出すこと。
      */
     suspend fun drawCanvas(draw: suspend Canvas.() -> Unit) {
+        // 前回のを消す
+        canvas.drawColor(0, PorterDuff.Mode.CLEAR)
         // 書く
         draw(canvas)
 

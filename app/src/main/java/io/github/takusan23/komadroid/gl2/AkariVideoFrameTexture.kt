@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -57,29 +58,32 @@ class AkariVideoFrameTexture(initTexName: Int) : MediaCodec.Callback() {
 
 
     fun play() {
-        currentJob = scope.launch {
-            // 無限ループでコールバックを待つ
-            while (isActive) {
-                when (val receiveAsyncState = mediaCodecCallbackChannel.receive()) {
-                    is MediaCodecAsyncState.InputBuffer -> {
-                        val inputIndex = receiveAsyncState.index
-                        val inputBuffer = mediaCodec?.getInputBuffer(inputIndex) ?: break
-                        val size = mediaExtractor?.readSampleData(inputBuffer, 0) ?: break
-                        if (size > 0) {
-                            // デコーダーへ流す
-                            mediaCodec?.queueInputBuffer(inputIndex, 0, size, mediaExtractor!!.sampleTime, 0)
-                            mediaExtractor?.advance()
+        scope.launch {
+            currentJob?.cancelAndJoin()
+            currentJob = scope.launch {
+                // 無限ループでコールバックを待つ
+                while (isActive) {
+                    when (val receiveAsyncState = mediaCodecCallbackChannel.receive()) {
+                        is MediaCodecAsyncState.InputBuffer -> {
+                            val inputIndex = receiveAsyncState.index
+                            val inputBuffer = mediaCodec?.getInputBuffer(inputIndex) ?: break
+                            val size = mediaExtractor?.readSampleData(inputBuffer, 0) ?: break
+                            if (size > 0) {
+                                // デコーダーへ流す
+                                mediaCodec?.queueInputBuffer(inputIndex, 0, size, mediaExtractor!!.sampleTime, 0)
+                                mediaExtractor?.advance()
+                            }
                         }
-                    }
 
-                    is MediaCodecAsyncState.OutputBuffer -> {
-                        val outputIndex = receiveAsyncState.index
-                        mediaCodec?.releaseOutputBuffer(outputIndex, true)
-                        delay(33)
-                    }
+                        is MediaCodecAsyncState.OutputBuffer -> {
+                            val outputIndex = receiveAsyncState.index
+                            mediaCodec?.releaseOutputBuffer(outputIndex, true)
+                            delay(33)
+                        }
 
-                    is MediaCodecAsyncState.OutputFormat -> {
-                        // デコーダーでは使われないはず
+                        is MediaCodecAsyncState.OutputFormat -> {
+                            // デコーダーでは使われないはず
+                        }
                     }
                 }
             }
@@ -90,8 +94,57 @@ class AkariVideoFrameTexture(initTexName: Int) : MediaCodec.Callback() {
         currentJob?.cancel()
     }
 
-    fun seekTo() {
+    fun seekTo(positionMs: Long) {
+        scope.launch {
+            currentJob?.cancelAndJoin()
+            currentJob = scope.launch {
+                val mediaExtractor = mediaExtractor ?: return@launch
+                val mediaCodec = mediaCodec ?: return@launch
 
+                if (mediaExtractor.sampleTime <= positionMs * 1_000) {
+                    // 一番近いキーフレームまでシーク
+                    mediaExtractor.seekTo(positionMs * 1_000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                } else {
+                    // もし時間が巻き戻る方にシークする場合
+                    // デコーダーをリセットする
+                    mediaExtractor.seekTo(positionMs * 1_000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    mediaCodec.flush()
+                    mediaCodec.start()
+                }
+
+                // 無限ループでコールバックを待つ
+                while (isActive) {
+                    when (val receiveAsyncState = mediaCodecCallbackChannel.receive()) {
+                        is MediaCodecAsyncState.InputBuffer -> {
+                            val inputIndex = receiveAsyncState.index
+                            val inputBuffer = mediaCodec.getInputBuffer(inputIndex) ?: break
+                            val size = mediaExtractor.readSampleData(inputBuffer, 0)
+                            if (size > 0) {
+                                // デコーダーへ流す
+                                mediaCodec.queueInputBuffer(inputIndex, 0, size, mediaExtractor.sampleTime, 0)
+                                mediaExtractor.advance()
+                            }
+                        }
+
+                        is MediaCodecAsyncState.OutputBuffer -> {
+                            val outputIndex = receiveAsyncState.index
+                            val info = receiveAsyncState.info
+                            if (positionMs * 1_000 <= info.presentationTimeUs) {
+                                // 指定時間なら、Surface に送信して break
+                                mediaCodec.releaseOutputBuffer(outputIndex, true)
+                                break
+                            } else {
+                                mediaCodec.releaseOutputBuffer(outputIndex, false)
+                            }
+                        }
+
+                        is MediaCodecAsyncState.OutputFormat -> {
+                            // デコーダーでは使われないはず
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun destroy() {

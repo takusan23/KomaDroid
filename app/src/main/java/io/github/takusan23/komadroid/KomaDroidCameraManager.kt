@@ -40,6 +40,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -232,8 +234,8 @@ class KomaDroidCameraManager(
 
     /** 用意をする */
     fun prepare() {
-        // prepareAkariVideoProcessorPreview()
-        prepareAkariVideoProcessorEncode()
+        prepareAkariVideoProcessorPreview()
+        // prepareAkariVideoProcessorEncode()
     }
 
     private fun prepareAkariVideoProcessorPreview() {
@@ -303,12 +305,12 @@ class KomaDroidCameraManager(
                 }
 
                 // 動画
+                var videoPositionMs = 0L
                 val videoPath = context.getExternalFilesDir(null)?.resolve("bbb.mp4")!!
                 val akariVideoFrameTexture = withContext(previewGlThreadDispatcher) {
                     textureRenderer.genTextureId { texId -> AkariVideoFrameTexture(texId) }
                 }
                 akariVideoFrameTexture.prepareDecoder(videoPath.path)
-                akariVideoFrameTexture.play()
 
                 // 解像度
                 frontCameraTexture.setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
@@ -338,34 +340,44 @@ class KomaDroidCameraManager(
 
                 // 描画
                 try {
-                    withContext(previewGlThreadDispatcher) {
-                        var rotate = 0f
-                        while (isActive) {
-                            rotate++
-                            textureRenderer.prepareDraw()
-                            textureRenderer.drawSurfaceTexture(backCameraTexture) { mvpMatrix ->
-                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                    listOf(
+                        launch {
+                            while (isActive) {
+                                delay(1_000)
+                                videoPositionMs += 1_000
+                                akariVideoFrameTexture.seekTo(videoPositionMs)
                             }
-                            textureRenderer.drawSurfaceTexture(frontCameraTexture) { mvpMatrix ->
-                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                                Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+                        },
+                        launch(previewGlThreadDispatcher) {
+                            var rotate = 0f
+                            while (isActive) {
+                                rotate++
+                                textureRenderer.prepareDraw()
+                                textureRenderer.drawSurfaceTexture(backCameraTexture) { mvpMatrix ->
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                }
+                                textureRenderer.drawSurfaceTexture(frontCameraTexture) { mvpMatrix ->
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                    Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+                                }
+                                textureRenderer.drawSurfaceTexture(akariVideoFrameTexture.akariSurfaceTexture) { mvpMatrix ->
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                    Matrix.scaleM(mvpMatrix, 0, 0.2f, 0.2f, 0.2f)
+                                    Matrix.translateM(mvpMatrix, 0, 0.5f, -3f, 1f)
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                    Matrix.rotateM(mvpMatrix, 0, rotate, 0f, 0f, 1f)
+                                }
+                                textureRenderer.drawCanvas {
+                                    drawText("Hello World", 100f, 100f, paint)
+                                    drawText("Video Position = ${videoPositionMs / 1_000} sec", 100f, 200f, paint)
+                                }
+                                // textureRenderer.applyEffect(mosaicEffect)
+                                // textureRenderer.applyEffect(blurEffect)
+                                textureRenderer.drawEnd()
+                                inputSurface.swapBuffers()
                             }
-                            textureRenderer.drawSurfaceTexture(akariVideoFrameTexture.akariSurfaceTexture) { mvpMatrix ->
-                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                                Matrix.scaleM(mvpMatrix, 0, 0.2f, 0.2f, 0.2f)
-                                Matrix.translateM(mvpMatrix, 0, 0.5f, -3f, 1f)
-                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                                Matrix.rotateM(mvpMatrix, 0, rotate, 0f, 0f, 1f)
-                            }
-                            textureRenderer.drawCanvas {
-                                drawText("Hello World", 100f, 100f, paint)
-                            }
-                            // textureRenderer.applyEffect(mosaicEffect)
-                            // textureRenderer.applyEffect(blurEffect)
-                            textureRenderer.drawEnd()
-                            inputSurface.swapBuffers()
                         }
-                    }
+                    ).joinAll()
                 } finally {
                     withContext(NonCancellable + previewGlThreadDispatcher) {
                         frontCameraTexture.destroy()
