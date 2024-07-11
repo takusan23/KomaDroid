@@ -14,7 +14,6 @@ import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
 import android.media.MediaRecorder
-import android.opengl.GLES20
 import android.opengl.Matrix
 import android.os.Build
 import android.os.Environment
@@ -27,10 +26,11 @@ import androidx.core.content.contentValuesOf
 import io.github.takusan23.komadroid.gl.InputSurface
 import io.github.takusan23.komadroid.gl.KomaDroidCameraTextureRenderer
 import io.github.takusan23.komadroid.gl2.AkariEffectFragmentShader
+import io.github.takusan23.komadroid.gl2.AkariGraphicsProcessor
+import io.github.takusan23.komadroid.gl2.AkariGraphicsTextureRenderer
 import io.github.takusan23.komadroid.gl2.AkariSurfaceTexture
 import io.github.takusan23.komadroid.gl2.AkariVideoEncoder
 import io.github.takusan23.komadroid.gl2.AkariVideoFrameTexture
-import io.github.takusan23.komadroid.gl2.AkariVideoProcessorRenderer
 import io.github.takusan23.komadroid.gl2.EffectFragmentShaderExample
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -254,62 +254,46 @@ class KomaDroidCameraManager(
                 // これがないと、FBO のサイズがズレてしまう（FBO 使う場合は glViewport をセットしないといけない）
                 previewSurface.setFixedSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
 
-                // GL コンテキストを作る
-                val inputSurface = InputSurface(previewSurface.surface)
-                val textureRenderer = AkariVideoProcessorRenderer(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
-                // 用意
-                withContext(previewGlThreadDispatcher) {
-                    inputSurface.makeCurrent()
-                    textureRenderer.prepareShader()
-                    GLES20.glViewport(0, 0, CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT) // 多分いる
-                }
+                // OpenGL ES の上に構築された、映像を加工するやつ
+                val akariGraphicsProcessor = AkariGraphicsProcessor(
+                    outputSurface = previewSurface.surface,
+                    width = CAMERA_RESOLUTION_WIDTH,
+                    height = CAMERA_RESOLUTION_HEIGHT
+                )
+                akariGraphicsProcessor.prepare()
 
                 // SurfaceTexture を作る
-                val frontCameraTexture = withContext(previewGlThreadDispatcher) {
-                    textureRenderer.genTextureId { texId -> AkariSurfaceTexture(texId) }
-                }
-                val backCameraTexture = withContext(previewGlThreadDispatcher) {
-                    textureRenderer.genTextureId { texId -> AkariSurfaceTexture(texId) }
-                }
+                val frontCameraTexture = akariGraphicsProcessor.genTextureId { texId -> AkariSurfaceTexture(texId) }
+                val backCameraTexture = akariGraphicsProcessor.genTextureId { texId -> AkariSurfaceTexture(texId) }
 
                 // エフェクト
-                val mosaicEffect = withContext(previewGlThreadDispatcher) {
-                    textureRenderer.genEffect { width, height ->
-                        AkariEffectFragmentShader(
-                            width = width,
-                            height = height,
-                            xStart = 0.3f,
-                            xEnd = 0.6f,
-                            yStart = 0.3f,
-                            yEnd = 0.6f,
-                            fragmentShaderCode = EffectFragmentShaderExample.FRAGMENT_SHADER_MOSAIC
-                        )
-                    }
+                val mosaicEffect = akariGraphicsProcessor.genEffect { width, height ->
+                    AkariEffectFragmentShader(
+                        width = width,
+                        height = height,
+                        xStart = 0.3f,
+                        xEnd = 0.6f,
+                        yStart = 0.3f,
+                        yEnd = 0.6f,
+                        fragmentShaderCode = EffectFragmentShaderExample.FRAGMENT_SHADER_MOSAIC
+                    ).apply { prepareShader() }
                 }
-                val blurEffect = withContext(previewGlThreadDispatcher) {
-                    textureRenderer.genEffect { width, height ->
-                        AkariEffectFragmentShader(
-                            width = width,
-                            height = height,
-                            xStart = 0.0f,
-                            xEnd = 1.0f,
-                            yStart = 0.0f,
-                            yEnd = 0.3f,
-                            fragmentShaderCode = EffectFragmentShaderExample.FRAGMENT_SHADER_BLUR
-                        )
-                    }
-                }
-                withContext(previewGlThreadDispatcher) {
-                    mosaicEffect.prepareShader()
-                    blurEffect.prepareShader()
+                val blurEffect = akariGraphicsProcessor.genEffect { width, height ->
+                    AkariEffectFragmentShader(
+                        width = width,
+                        height = height,
+                        xStart = 0.0f,
+                        xEnd = 1.0f,
+                        yStart = 0.0f,
+                        yEnd = 0.3f,
+                        fragmentShaderCode = EffectFragmentShaderExample.FRAGMENT_SHADER_BLUR
+                    ).apply { prepareShader() }
                 }
 
                 // 動画
                 var videoPositionMs = 0L
                 val videoPath = context.getExternalFilesDir(null)?.resolve("bbb.mp4")!!
-                val akariVideoFrameTexture = withContext(previewGlThreadDispatcher) {
-                    textureRenderer.genTextureId { texId -> AkariVideoFrameTexture(texId) }
-                }
+                val akariVideoFrameTexture = akariGraphicsProcessor.genTextureId { texId -> AkariVideoFrameTexture(texId) }
                 akariVideoFrameTexture.prepareDecoder(videoPath.path)
 
                 // 解像度
@@ -343,50 +327,46 @@ class KomaDroidCameraManager(
                     listOf(
                         launch {
                             while (isActive) {
-                                delay(1_000)
-                                videoPositionMs += 1_000
+                                delay(500)
+                                videoPositionMs += 500
                                 akariVideoFrameTexture.seekTo(videoPositionMs)
                             }
                         },
-                        launch(previewGlThreadDispatcher) {
+                        launch {
                             var rotate = 0f
-                            while (isActive) {
+                            akariGraphicsProcessor.drawLoop {
                                 rotate++
-                                textureRenderer.prepareDraw()
-                                textureRenderer.drawSurfaceTexture(backCameraTexture) { mvpMatrix ->
+                                drawSurfaceTexture(backCameraTexture) { mvpMatrix ->
                                     Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
                                 }
-                                textureRenderer.drawSurfaceTexture(frontCameraTexture) { mvpMatrix ->
+                                drawSurfaceTexture(frontCameraTexture) { mvpMatrix ->
                                     Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
                                     Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
                                 }
-                                textureRenderer.drawSurfaceTexture(akariVideoFrameTexture.akariSurfaceTexture) { mvpMatrix ->
+                                drawSurfaceTexture(akariVideoFrameTexture.akariSurfaceTexture) { mvpMatrix ->
                                     Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
                                     Matrix.scaleM(mvpMatrix, 0, 0.2f, 0.2f, 0.2f)
                                     Matrix.translateM(mvpMatrix, 0, 0.5f, -3f, 1f)
                                     Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
                                     Matrix.rotateM(mvpMatrix, 0, rotate, 0f, 0f, 1f)
                                 }
-                                textureRenderer.drawCanvas {
+                                drawCanvas {
                                     drawText("Hello World", 100f, 100f, paint)
-                                    drawText("Video Position = ${videoPositionMs / 1_000} sec", 100f, 200f, paint)
+                                    drawText("Video Position = $videoPositionMs ms", 100f, 200f, paint)
                                 }
                                 // textureRenderer.applyEffect(mosaicEffect)
                                 // textureRenderer.applyEffect(blurEffect)
-                                textureRenderer.drawEnd()
-                                inputSurface.swapBuffers()
                             }
                         }
                     ).joinAll()
                 } finally {
-                    withContext(NonCancellable + previewGlThreadDispatcher) {
+                    withContext(NonCancellable) {
                         frontCameraTexture.destroy()
                         backCameraTexture.destroy()
                         mosaicEffect.destroy()
                         blurEffect.destroy()
                         akariVideoFrameTexture.destroy()
-                        textureRenderer.destroy()
-                        inputSurface.destroy()
+                        akariGraphicsProcessor.destroy()
                     }
                 }
             }
@@ -410,7 +390,7 @@ class KomaDroidCameraManager(
 
                 // GL コンテキストを作る
                 val inputSurface = InputSurface(encoder.inputSurface)
-                val textureRenderer = AkariVideoProcessorRenderer(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+                val textureRenderer = AkariGraphicsTextureRenderer(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
                 // 用意
                 withContext(previewGlThreadDispatcher) {
                     inputSurface.makeCurrent()

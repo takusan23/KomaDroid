@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 
 /**
- * SurfaceTexture を[AkariVideoProcessorPlusGl]で使うため使いやすくしただけのクラス。
+ * SurfaceTexture を[AkariGraphicsProcessor]で使うため使いやすくしただけのクラス。
  * コンストラクタはどのスレッドからでも作れるはず。
  *
  * このクラスのインスタンスを作るためには、[initTexName]が引数で、そのテクスチャ作成には[GLES20.glGenTextures]が必要で、そのためには GL コンテキストを準備する必要がある。

@@ -10,7 +10,7 @@ import android.opengl.Matrix
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class AkariVideoProcessorRenderer(
+class AkariGraphicsTextureRenderer(
     private val width: Int,
     private val height: Int
 ) {

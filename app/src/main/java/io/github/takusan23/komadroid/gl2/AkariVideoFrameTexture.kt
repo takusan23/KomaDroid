@@ -16,7 +16,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
-/** [AkariVideoProcessorPlusGl]で動画を描画する */
+/** [AkariGraphicsProcessor]で動画を描画する */
 class AkariVideoFrameTexture(initTexName: Int) : MediaCodec.Callback() {
 
     private var mediaCodec: MediaCodec? = null
