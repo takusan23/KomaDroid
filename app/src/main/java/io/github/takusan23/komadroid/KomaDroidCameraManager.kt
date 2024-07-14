@@ -452,10 +452,10 @@ class KomaDroidCameraManager(
         isAwaitTextureUpdate: Boolean = false
     ) {
         // カメラ映像を描画する
-        drawSurfaceTexture(frontTexture, isAwaitTextureUpdate) { mvpMatrix ->
+        drawSurfaceTexture(backTexture, isAwaitTextureUpdate) { mvpMatrix ->
             Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
         }
-        drawSurfaceTexture(backTexture, isAwaitTextureUpdate) { mvpMatrix ->
+        drawSurfaceTexture(frontTexture, isAwaitTextureUpdate) { mvpMatrix ->
             Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
             Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
         }
