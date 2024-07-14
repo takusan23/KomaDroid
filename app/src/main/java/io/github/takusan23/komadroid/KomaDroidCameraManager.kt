@@ -24,6 +24,7 @@ import androidx.core.content.contentValuesOf
 import androidx.lifecycle.Lifecycle
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsProcessor
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsSurfaceTexture
+import io.github.takusan23.komadroid.akaricore5.AkariGraphicsTextureRenderer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -182,14 +183,10 @@ class KomaDroidCameraManager(
 
                         try {
                             previewAkariGraphicsProcessor.drawLoop {
-                                // カメラ映像を描画する
-                                drawSurfaceTexture(previewFrontCameraAkariSurfaceTexture!!) { mvpMatrix ->
-                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                                }
-                                drawSurfaceTexture(previewBackCameraAkariSurfaceTexture!!) { mvpMatrix ->
-                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                                    Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
-                                }
+                                drawFrame(
+                                    frontTexture = previewFrontCameraAkariSurfaceTexture!!,
+                                    backTexture = previewBackCameraAkariSurfaceTexture!!
+                                )
                             }
                         } finally {
                             withContext(NonCancellable) {
@@ -280,14 +277,11 @@ class KomaDroidCameraManager(
                 // ImageReader に OpenGL ES で描画する
                 // プレビューと違ってテクスチャが来るのを待つ
                 recordAkariGraphicsProcessor?.drawOneshot {
-                    // カメラ映像を描画する
-                    drawSurfaceTexture(recordFrontCameraAkariSurfaceTexture!!, isAwaitTextureUpdate = true) { mvpMatrix ->
-                        Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                    }
-                    drawSurfaceTexture(recordBackCameraAkariSurfaceTexture!!, isAwaitTextureUpdate = true) { mvpMatrix ->
-                        Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                        Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
-                    }
+                    drawFrame(
+                        frontTexture = recordFrontCameraAkariSurfaceTexture!!,
+                        backTexture = recordBackCameraAkariSurfaceTexture!!,
+                        isAwaitTextureUpdate = true
+                    )
                 }
                 // ImageReader で取り出す
                 imageReader?.saveJpegImage()
@@ -343,14 +337,10 @@ class KomaDroidCameraManager(
                         // MediaRecorder に OpenGL ES で描画
                         // 録画中はループするのでこれ以降の処理には進まない
                         recordAkariGraphicsProcessor?.drawLoop {
-                            // カメラ映像を描画する
-                            drawSurfaceTexture(recordFrontCameraAkariSurfaceTexture!!) { mvpMatrix ->
-                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                            }
-                            drawSurfaceTexture(recordBackCameraAkariSurfaceTexture!!) { mvpMatrix ->
-                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                                Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
-                            }
+                            drawFrame(
+                                frontTexture = recordFrontCameraAkariSurfaceTexture!!,
+                                backTexture = recordBackCameraAkariSurfaceTexture!!
+                            )
                         }
                     } finally {
                         // 録画終了処理
@@ -391,6 +381,17 @@ class KomaDroidCameraManager(
         currentJob?.cancel()
     }
 
+    /** 破棄時に呼び出す。Activity の onDestroy とかで呼んでください。 */
+    fun destroy() {
+        scope.launch {
+            recordAkariGraphicsProcessor?.destroy()
+            recordFrontCameraAkariSurfaceTexture?.destroy()
+            recordBackCameraAkariSurfaceTexture?.destroy()
+            frontCameraFlow.value?.close()
+            backCameraFlow.value?.close()
+            cancel()
+        }
+    }
 
     /** 静止画モードの初期化 */
     private suspend fun initPictureMode() {
@@ -437,8 +438,33 @@ class KomaDroidCameraManager(
         generateRecordSurfaceTexture()
     }
 
+    /**
+     * [AkariGraphicsProcessor.drawOneshot]や[AkariGraphicsProcessor.drawLoop]の共通している描画処理
+     * 行列とかなんとか。
+     *
+     * @param frontTexture プレビュー用か録画用か
+     * @param backTexture プレビュー用か録画用か
+     * @param isAwaitTextureUpdate [AkariGraphicsTextureRenderer.drawSurfaceTexture]の引数
+     */
+    private suspend fun AkariGraphicsTextureRenderer.drawFrame(
+        frontTexture: AkariGraphicsSurfaceTexture,
+        backTexture: AkariGraphicsSurfaceTexture,
+        isAwaitTextureUpdate: Boolean = false
+    ) {
+        // カメラ映像を描画する
+        drawSurfaceTexture(frontTexture, isAwaitTextureUpdate) { mvpMatrix ->
+            Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+        }
+        drawSurfaceTexture(backTexture, isAwaitTextureUpdate) { mvpMatrix ->
+            Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+            Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+        }
+    }
+
     /** 録画用の[AkariGraphicsSurfaceTexture]を作る */
     private suspend fun generateRecordSurfaceTexture() {
+        recordFrontCameraAkariSurfaceTexture?.destroy()
+        recordBackCameraAkariSurfaceTexture?.destroy()
         recordFrontCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
         recordBackCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
         recordFrontCameraAkariSurfaceTexture?.setResolution()
@@ -502,18 +528,6 @@ class KomaDroidCameraManager(
         // 開放
         editBitmap.recycle()
         image.close()
-    }
-
-    /** 破棄時に呼び出す。Activity の onDestroy とかで呼んでください。 */
-    fun destroy() {
-        scope.launch {
-            recordAkariGraphicsProcessor?.destroy()
-            recordFrontCameraAkariSurfaceTexture?.destroy()
-            recordBackCameraAkariSurfaceTexture?.destroy()
-            frontCameraFlow.value?.close()
-            backCameraFlow.value?.close()
-            cancel()
-        }
     }
 
     /**
