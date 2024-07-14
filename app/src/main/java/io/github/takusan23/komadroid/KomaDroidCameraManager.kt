@@ -12,6 +12,7 @@ import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
 import android.media.MediaRecorder
+import android.opengl.Matrix
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -20,8 +21,8 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.core.content.contentValuesOf
-import io.github.takusan23.komadroid.gl.InputSurface
-import io.github.takusan23.komadroid.gl.KomaDroidCameraTextureRenderer
+import io.github.takusan23.komadroid.akaricore5.AkariGraphicsProcessor
+import io.github.takusan23.komadroid.akaricore5.AkariGraphicsSurfaceTexture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -38,9 +39,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -61,12 +60,6 @@ class KomaDroidCameraManager(
     /** 今のタスク（プレビュー、動画撮影）キャンセル用 */
     private var currentJob: Job? = null
 
-    /** プレビュー用 OpenGL ES のスレッド */
-    private val previewGlThreadDispatcher = newSingleThreadContext("PreviewGlThread")
-
-    /** 録画用 OpenGL ES のスレッド */
-    private val recordGlThreadDispatcher = newSingleThreadContext("RecordGlThread")
-
     /** 静止画撮影用[ImageReader] */
     private var imageReader: ImageReader? = null
 
@@ -76,82 +69,14 @@ class KomaDroidCameraManager(
     /** 録画保存先 */
     private var saveVideoFile: File? = null
 
-    /**
-     * 録画用[OpenGlDrawPair]。
-     * SurfaceView と違って ImageReader / MediaRecorder にはコールバックとかは無いので Flow にはしていない。
-     */
-    private var recordOpenGlDrawPair: OpenGlDrawPair? = null
-
     /** 出力先 Surface */
     val surfaceView = SurfaceView(context)
 
     /**
-     * [SurfaceView]へ OpenGL で描画できるやつ。
-     * GLSurfaceView を使ってないのは録画用と処理を共通にするため。録画用も[OpenGlDrawPair]を使う。
-     * ただ、録画と違い、[SurfaceView]は生成と破棄が非同期コールバックを待つ必要があるため、[OpenGlDrawPair]生成と破棄は別になっている。
-     *
-     * また、[stateIn]でホットフローに変換し、[SurfaceView]のコールバックがいつ呼ばれても大丈夫にする。
-     * [callbackFlow]はコールドフローで、collect するまで動かない、いつコールバックが呼ばれるかわからないため、今回はホットフローに変換している。
+     * プレビューを表示する[SurfaceView]のコールバックを[Flow]にして、そのついでに[AkariGraphicsProcessor]のインスタンスを生成する。
+     * [SurfaceView]のコールバックがいつ呼ばれても対応できるように、ホットフローに変換して常にコールバックを監視することにする。
      */
-    /*
-        private val previewOpenGlDrawPairFlow = callbackFlow {
-            val callback = object : SurfaceHolder.Callback {
-                override fun surfaceCreated(holder: SurfaceHolder) {
-                    trySend(holder)
-                }
-
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                    // do nothing
-                }
-
-                override fun surfaceDestroyed(holder: SurfaceHolder) {
-                    trySend(null)
-                }
-            }
-            surfaceView.holder.addCallback(callback)
-            awaitClose { surfaceView.holder.removeCallback(callback) }
-        }.let { surfaceHolderFlow ->
-
-            // リソース開放用に前回の値を持つ
-            var prevPreviewDrawPair: OpenGlDrawPair? = null
-            surfaceHolderFlow.map { holderOrNull ->
-
-                // 前回の OpenGlDrawPair を破棄する
-                withContext(previewGlThreadDispatcher) {
-                    println("#### PREVIEW OPEN GL DESTROY START ####")
-                    prevPreviewDrawPair?.textureRenderer?.destroy()
-                    prevPreviewDrawPair?.inputSurface?.destroy()
-                    println("#### PREVIEW OPEN GL DESTROY FINISH ####")
-                }
-
-                val newDrawPair = if (holderOrNull != null) {
-                    // 新しい SurfaceView で作り直す
-                    withContext(previewGlThreadDispatcher) {
-                        createOpenGlDrawPair(surface = holderOrNull.surface)
-                    }
-                } else {
-                    // SurfaceView が surfaceDestroyed なので null
-                    null
-                }
-                prevPreviewDrawPair = newDrawPair
-                newDrawPair
-            }
-        }.flowOn(previewGlThreadDispatcher).stateIn(
-            scope = scope,
-            started = SharingStarted.Eagerly,
-            initialValue = null
-        )
-    */
-
-    /**
-     * [SurfaceView]へ OpenGL で描画できるやつ。
-     * ただ、[SurfaceView]は生成と破棄の非同期コールバックを待つ必要があるため、このような[Flow]を使う羽目になっている。
-     * これは[OpenGlDrawPair]の生成までしかやっていないので、破棄は使う側で頼みました。
-     *
-     * また、[stateIn]でホットフローに変換し、[SurfaceView]のコールバックがいつ呼ばれても大丈夫にする。
-     * [callbackFlow]はコールドフローで、collect するまで動かない、いつコールバックが呼ばれるかわからないため、今回はホットフローに変換している。
-     */
-    private val previewOpenGlDrawPairFlow = callbackFlow {
+    private val previewAkariGraphicsProcessor = callbackFlow {
         val callback = object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
                 trySend(holder)
@@ -168,12 +93,15 @@ class KomaDroidCameraManager(
         surfaceView.holder.addCallback(callback)
         awaitClose { surfaceView.holder.removeCallback(callback) }
     }.map { holder ->
-        // OpenGL ES のセットアップ
-        val surface = holder?.surface
-        if (surface != null) {
-            withContext(previewGlThreadDispatcher) {
-                createOpenGlDrawPair(surface)
-            }
+        if (holder != null) {
+            // OpenGL ES の glViewport と合わせる
+            holder.setFixedSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+            // Processor を作る
+            AkariGraphicsProcessor(
+                outputSurface = holder.surface,
+                width = CAMERA_RESOLUTION_WIDTH,
+                height = CAMERA_RESOLUTION_HEIGHT
+            ).apply { prepare() }
         } else null
     }.stateIn(
         scope = scope,
@@ -181,7 +109,11 @@ class KomaDroidCameraManager(
         initialValue = null
     )
 
+    /** 静止画、録画撮影用 [AkariGraphicsProcessor] */
+    private var recordAkariGraphicsProcessor: AkariGraphicsProcessor? = null
+
     // カメラを開く、Flow なのはコールバックで通知されるので。また、ホットフローに変換して、一度だけ openCamera されるようにします（collect のたびに動かさない）
+    // TODO ライフサイクルを購読する
 
     /** 前面カメラ */
     private val frontCameraFlow = openCameraFlow(getFrontCameraId()).stateIn(
@@ -197,6 +129,20 @@ class KomaDroidCameraManager(
         initialValue = null
     )
 
+    // プレビュー用、録画用の AkariGraphicsSurfaceTexture
+    private var previewFrontCameraAkariSurfaceTexture: AkariGraphicsSurfaceTexture? = null
+    private var previewBackCameraAkariSurfaceTexture: AkariGraphicsSurfaceTexture? = null
+    private var recordFrontCameraAkariSurfaceTexture: AkariGraphicsSurfaceTexture? = null
+    private var recordBackCameraAkariSurfaceTexture: AkariGraphicsSurfaceTexture? = null
+
+    /** 前面カメラの出力先[Surface]の配列 */
+    private val frontCameraOutputSurfaceList: List<Surface>
+        get() = listOfNotNull(previewFrontCameraAkariSurfaceTexture?.surface, recordFrontCameraAkariSurfaceTexture?.surface)
+
+    /** 背面カメラの出力先[Surface]の配列 */
+    private val backCameraOutputSurfaceList: List<Surface>
+        get() = listOfNotNull(previewBackCameraAkariSurfaceTexture?.surface, recordBackCameraAkariSurfaceTexture?.surface)
+
     /** 用意をする */
     fun prepare() {
         scope.launch {
@@ -206,71 +152,38 @@ class KomaDroidCameraManager(
                 CaptureMode.VIDEO -> initVideoMode()
             }
 
-            // プレビュー Surface で OpenGL ES の描画と破棄を行う。OpenGL ES の用意は map { } でやっている。
-            // 新しい値が来たら、既存の OpenGlDrawPair は破棄するので、collectLatest でキャンセルを投げてもらうようにする。
-            // また、録画用（静止画撮影、動画撮影）も別のところで描画
-            launch {
-                previewOpenGlDrawPairFlow.collectLatest { previewOpenGlDrawPair ->
-                    previewOpenGlDrawPair ?: return@collectLatest
+            // カメラ映像を OpenGL ES からテクスチャとして使えるように SurfaceTexture を作る
+            // TODO もしかしたらプレビューと録画用で SurfaceTexture を作る必要がないかも、attach / detach 出来るっぽい
+            generatePreviewSurfaceTexture()
 
+            // プレビュー用 OpenGL ES の用意
+            // SurfaceView の生成と破棄に合わせて作り直す
+            // collectLatest で Flow から新しい値が流れてきたらキャンセルするように
+            launch {
+                previewAkariGraphicsProcessor.collectLatest { processor ->
+                    processor ?: return@collectLatest
                     try {
-                        // OpenGL ES の描画のためのメインループ
-                        withContext(previewGlThreadDispatcher) {
-                            while (isActive) {
-                                renderOpenGl(previewOpenGlDrawPair)
+                        processor.drawLoop {
+                            previewFrontCameraAkariSurfaceTexture ?: return@drawLoop
+                            previewBackCameraAkariSurfaceTexture ?: return@drawLoop
+
+                            // カメラ映像を描画する
+                            drawSurfaceTexture(previewFrontCameraAkariSurfaceTexture!!) { mvpMatrix ->
+                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                            }
+                            drawSurfaceTexture(previewBackCameraAkariSurfaceTexture!!) { mvpMatrix ->
+                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
                             }
                         }
                     } finally {
-                        // 終了時は OpenGL ES の破棄
-                        withContext(NonCancellable + previewGlThreadDispatcher) {
-                            previewOpenGlDrawPair.textureRenderer.destroy()
-                            previewOpenGlDrawPair.inputSurface.destroy()
-                        }
+                        processor.destroy()
                     }
                 }
             }
 
             // プレビューを開始する
             startPreview()
-        }
-    }
-
-    /** 静止画モードの初期化 */
-    private suspend fun initPictureMode() {
-        imageReader = ImageReader.newInstance(
-            CAMERA_RESOLUTION_WIDTH,
-            CAMERA_RESOLUTION_HEIGHT,
-            PixelFormat.RGBA_8888,
-            2
-        )
-        // 描画を OpenGL に、プレビューと同じ
-        recordOpenGlDrawPair = withContext(recordGlThreadDispatcher) {
-            createOpenGlDrawPair(surface = imageReader!!.surface)
-        }
-    }
-
-    /** 録画モードの初期化 */
-    private suspend fun initVideoMode() {
-        mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setVideoSource(MediaRecorder.VideoSource.SURFACE)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setAudioChannels(2)
-            setVideoEncodingBitRate(3_000_000) // H.264 なので高めに
-            setVideoFrameRate(30)
-            setVideoSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
-            setAudioEncodingBitRate(128_000)
-            setAudioSamplingRate(44_100)
-            // 一時的に getExternalFilesDir に保存する
-            saveVideoFile = context.getExternalFilesDir(null)!!.resolve("${System.currentTimeMillis()}.mp4")
-            setOutputFile(saveVideoFile!!)
-            prepare()
-        }
-        // 描画を OpenGL に、プレビューと同じ
-        recordOpenGlDrawPair = withContext(recordGlThreadDispatcher) {
-            createOpenGlDrawPair(surface = mediaRecorder!!.surface)
         }
     }
 
@@ -286,36 +199,27 @@ class KomaDroidCameraManager(
                 combine(
                     frontCameraFlow,
                     backCameraFlow,
-                    previewOpenGlDrawPairFlow
-                ) { a, b, c -> Triple(a, b, c) }.collect { (frontCamera, backCamera, previewOpenGlDrawPair) ->
+                    previewAkariGraphicsProcessor
+                ) { a, b, c -> Triple(a, b, c) }.collect { (frontCamera, backCamera, processor) ->
 
                     // フロントカメラ、バックカメラ、プレビューの OpenGL ES がすべて準備完了になるまで待つ
                     frontCamera ?: return@collect
                     backCamera ?: return@collect
-                    previewOpenGlDrawPair ?: return@collect
-                    val recordOpenGlDrawPair = recordOpenGlDrawPair ?: return@collect
+                    processor ?: return@collect
 
                     // フロントカメラの設定
                     // 出力先
-                    val frontCameraOutputList = listOfNotNull(
-                        previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
-                        recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface
-                    )
                     val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                        frontCameraOutputList.forEach { surface -> addTarget(surface) }
+                        frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                     }.build()
-                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputList)
+                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
                     frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
 
                     // バックカメラの設定
-                    val backCameraOutputList = listOfNotNull(
-                        previewOpenGlDrawPair.textureRenderer.backCameraInputSurface,
-                        recordOpenGlDrawPair.textureRenderer.backCameraInputSurface
-                    )
                     val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                        backCameraOutputList.forEach { surface -> addTarget(surface) }
+                        backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                     }.build()
-                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
+                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
                     backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
                 }
             }
@@ -335,35 +239,33 @@ class KomaDroidCameraManager(
                 // 用意が揃うまで待つ
                 val frontCamera = frontCameraFlow.filterNotNull().first()
                 val backCamera = backCameraFlow.filterNotNull().first()
-                val previewOpenGlDrawPair = previewOpenGlDrawPairFlow.filterNotNull().first()
-                val recordOpenGlDrawPair = recordOpenGlDrawPair!!
 
                 // フロントカメラの設定
                 // 出力先
-                val frontCameraOutputList = listOfNotNull(
-                    previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
-                    recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface
-                )
                 val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                    frontCameraOutputList.forEach { surface -> addTarget(surface) }
+                    frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                 }.build()
-                val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputList)
+                val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
                 frontCameraCaptureSession?.capture(frontCameraCaptureRequest, null, null)
 
                 // バックカメラの設定
-                val backCameraOutputList = listOfNotNull(
-                    previewOpenGlDrawPair.textureRenderer.backCameraInputSurface,
-                    recordOpenGlDrawPair.textureRenderer.backCameraInputSurface
-                )
                 val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                    backCameraOutputList.forEach { surface -> addTarget(surface) }
+                    backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                 }.build()
-                val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
+                val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
                 backCameraCaptureSession?.capture(backCameraCaptureRequest, null, null)
 
                 // ImageReader に OpenGL ES で描画する
-                withContext(recordGlThreadDispatcher) {
-                    renderOpenGl(recordOpenGlDrawPair)
+                // プレビューと違ってテクスチャが来るのを待つ
+                recordAkariGraphicsProcessor?.drawOneshot {
+                    // カメラ映像を描画する
+                    drawSurfaceTexture(recordFrontCameraAkariSurfaceTexture!!, isAwaitTextureUpdate = true) { mvpMatrix ->
+                        Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                    }
+                    drawSurfaceTexture(recordBackCameraAkariSurfaceTexture!!, isAwaitTextureUpdate = true) { mvpMatrix ->
+                        Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                        Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+                    }
                 }
                 // ImageReader で取り出す
                 imageReader?.saveJpegImage()
@@ -392,36 +294,27 @@ class KomaDroidCameraManager(
                 combine(
                     frontCameraFlow,
                     backCameraFlow,
-                    previewOpenGlDrawPairFlow
-                ) { a, b, c -> Triple(a, b, c) }.collectLatest { (frontCamera, backCamera, previewOpenGlDrawPair) ->
+                    previewAkariGraphicsProcessor
+                ) { a, b, c -> Triple(a, b, c) }.collectLatest { (frontCamera, backCamera, processor) ->
 
                     // フロントカメラ、バックカメラ、プレビューの OpenGL ES がすべて準備完了になるまで待つ
                     frontCamera ?: return@collectLatest
                     backCamera ?: return@collectLatest
-                    previewOpenGlDrawPair ?: return@collectLatest
-                    val recordOpenGlDrawPair = recordOpenGlDrawPair ?: return@collectLatest
+                    processor ?: return@collectLatest
 
                     // フロントカメラの設定
                     // 出力先
-                    val frontCameraOutputList = listOfNotNull(
-                        previewOpenGlDrawPair.textureRenderer.frontCameraInputSurface,
-                        recordOpenGlDrawPair.textureRenderer.frontCameraInputSurface
-                    )
                     val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                        frontCameraOutputList.forEach { surface -> addTarget(surface) }
+                        frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                     }.build()
-                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputList)
+                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
                     frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
 
                     // バックカメラの設定
-                    val backCameraOutputList = listOfNotNull(
-                        previewOpenGlDrawPair.textureRenderer.backCameraInputSurface,
-                        recordOpenGlDrawPair.textureRenderer.backCameraInputSurface
-                    )
                     val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                        backCameraOutputList.forEach { surface -> addTarget(surface) }
+                        backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                     }.build()
-                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputList)
+                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
                     backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
 
                     // 録画開始
@@ -429,9 +322,14 @@ class KomaDroidCameraManager(
                     try {
                         // MediaRecorder に OpenGL ES で描画
                         // 録画中はループするのでこれ以降の処理には進まない
-                        withContext(recordGlThreadDispatcher) {
-                            while (isActive) {
-                                renderOpenGl(recordOpenGlDrawPair)
+                        recordAkariGraphicsProcessor?.drawLoop {
+                            // カメラ映像を描画する
+                            drawSurfaceTexture(recordFrontCameraAkariSurfaceTexture!!) { mvpMatrix ->
+                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                            }
+                            drawSurfaceTexture(recordBackCameraAkariSurfaceTexture!!) { mvpMatrix ->
+                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
                             }
                         }
                     } finally {
@@ -473,90 +371,73 @@ class KomaDroidCameraManager(
         currentJob?.cancel()
     }
 
-    /**
-     * [surface]を受け取って、[OpenGlDrawPair]を作る
-     * この関数は[previewGlThreadDispatcher]や[recordGlThreadDispatcher]等、OpenGL 用スレッドの中で呼び出す必要があります。
-     *
-     * @param surface 描画先
-     * @return [OpenGlDrawPair]
-     */
-    private fun createOpenGlDrawPair(surface: Surface): OpenGlDrawPair {
-        val inputSurface = InputSurface(surface)
-        val textureRenderer = KomaDroidCameraTextureRenderer()
-        // スレッド切り替え済みなはずなので
-        inputSurface.makeCurrent()
-        textureRenderer.createShader()
-        // カメラ映像の解像度
-        // https://developer.android.com/reference/android/hardware/camera2/CameraDevice#createCaptureSession(android.hardware.camera2.params.SessionConfiguration)
-        textureRenderer.setSurfaceTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
-        return OpenGlDrawPair(inputSurface, textureRenderer)
+
+    /** 静止画モードの初期化 */
+    private suspend fun initPictureMode() {
+        imageReader = ImageReader.newInstance(
+            CAMERA_RESOLUTION_WIDTH,
+            CAMERA_RESOLUTION_HEIGHT,
+            PixelFormat.RGBA_8888,
+            2
+        )
+        // 描画を OpenGL に、プレビューと同じ
+        recordAkariGraphicsProcessor = AkariGraphicsProcessor(
+            outputSurface = imageReader!!.surface,
+            width = CAMERA_RESOLUTION_WIDTH,
+            height = CAMERA_RESOLUTION_HEIGHT,
+        ).apply { prepare() }
+        generateRecordSurfaceTexture()
     }
 
-    /**
-     * [OpenGlDrawPair]を使って描画する。
-     * スレッド注意です！！！。[previewGlThreadDispatcher]や[recordGlThreadDispatcher]から呼び出す必要があります。
-     *
-     * @param drawPair プレビューとか
-     */
-    private suspend fun renderOpenGl(drawPair: OpenGlDrawPair) {
-        if (drawPair.textureRenderer.isAvailableFrontCameraFrame() || drawPair.textureRenderer.isAvailableBackCameraFrame()) {
-            // カメラ映像テクスチャを更新して、描画
-            drawPair.textureRenderer.updateFrontCameraTexture()
-            drawPair.textureRenderer.updateBackCameraTexture()
-            drawPair.textureRenderer.draw()
-            drawPair.inputSurface.swapBuffers()
+    /** 録画モードの初期化 */
+    private suspend fun initVideoMode() {
+        mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setVideoSource(MediaRecorder.VideoSource.SURFACE)
+            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            setAudioChannels(2)
+            setVideoEncodingBitRate(3_000_000) // H.264 なので高めに
+            setVideoFrameRate(30)
+            setVideoSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+            setAudioEncodingBitRate(128_000)
+            setAudioSamplingRate(44_100)
+            // 一時的に getExternalFilesDir に保存する
+            saveVideoFile = context.getExternalFilesDir(null)!!.resolve("${System.currentTimeMillis()}.mp4")
+            setOutputFile(saveVideoFile!!)
+            prepare()
         }
+        // 描画を OpenGL に、プレビューと同じ
+        recordAkariGraphicsProcessor = AkariGraphicsProcessor(
+            outputSurface = mediaRecorder!!.surface,
+            width = CAMERA_RESOLUTION_WIDTH,
+            height = CAMERA_RESOLUTION_HEIGHT,
+        ).apply { prepare() }
+        generateRecordSurfaceTexture()
     }
 
-//    /**
-//     * OpenGL で描画を行う。
-//     * コルーチンがキャンセルされるまでずっと描画するため、一時停止し続けます。
-//     *
-//     * @param previewPair プレビューを描画する[OpenGlDrawPair]
-//     * @param recordPair 録画用[OpenGlDrawPair]
-//     */
-//    private suspend fun loopRenderOpenGl(
-//        previewPair: OpenGlDrawPair,
-//        recordPair: OpenGlDrawPair
-//    ) = coroutineScope {
-//        while (isActive) {
-//            renderOpenGl(previewPair, recordPair)
-//        }
-//    }
-//
-//    /**
-//     * OpenGL の描画を行う
-//     *
-//     * @param previewPair プレビューを描画する[OpenGlDrawPair]
-//     * @param recordPair 録画用[OpenGlDrawPair]
-//     */
-//    private suspend fun renderOpenGl(
-//        previewPair: OpenGlDrawPair,
-//        recordPair: OpenGlDrawPair
-//    ) {
-//        val (previewInputSurface, previewRenderer) = previewPair
-//        val (recordInputSurface, recordRenderer) = recordPair
-//
-//        // プレビューを描画
-//        withContext(previewGlThreadDispatcher) {
-//            if (previewRenderer.isAvailableFrontCameraFrame() || previewRenderer.isAvailableBackCameraFrame()) {
-//                // カメラ映像テクスチャを更新して、描画
-//                previewRenderer.updateFrontCameraTexture()
-//                previewRenderer.updateBackCameraTexture()
-//                previewRenderer.draw()
-//                previewInputSurface.swapBuffers()
-//            }
-//        }
-//        // 録画用も描画
-//        withContext(recordGlThreadDispatcher) {
-//            if (recordRenderer.isAvailableFrontCameraFrame() || recordRenderer.isAvailableBackCameraFrame()) {
-//                recordRenderer.updateFrontCameraTexture()
-//                recordRenderer.updateBackCameraTexture()
-//                recordRenderer.draw()
-//                recordInputSurface.swapBuffers()
-//            }
-//        }
-//    }
+    /** 録画用の[AkariGraphicsSurfaceTexture]を作る */
+    private suspend fun generateRecordSurfaceTexture() {
+        recordFrontCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+        recordBackCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+        recordFrontCameraAkariSurfaceTexture?.setResolution()
+        recordBackCameraAkariSurfaceTexture?.setResolution()
+    }
+
+    /** プレビュー用の[AkariGraphicsSurfaceTexture]を作る */
+    private suspend fun generatePreviewSurfaceTexture() {
+        val previewProcessor = previewAkariGraphicsProcessor.filterNotNull().first()
+        previewFrontCameraAkariSurfaceTexture = previewProcessor.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+        previewBackCameraAkariSurfaceTexture = previewProcessor.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+        previewFrontCameraAkariSurfaceTexture?.setResolution()
+        previewBackCameraAkariSurfaceTexture?.setResolution()
+    }
+
+    /** [AkariGraphicsSurfaceTexture.setTextureSize]を呼び出す */
+    private fun AkariGraphicsSurfaceTexture.setResolution() {
+        setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+    }
 
     /**
      * [SessionConfiguration]が非同期なので、コルーチンで出来るように
@@ -614,13 +495,17 @@ class KomaDroidCameraManager(
 
     /** 破棄時に呼び出す。Activity の onDestroy とかで呼んでください。 */
     fun destroy() {
-        scope.cancel()
-        recordOpenGlDrawPair?.textureRenderer?.destroy()
-        recordOpenGlDrawPair?.inputSurface?.destroy()
-        previewGlThreadDispatcher.close()
-        recordGlThreadDispatcher.close()
-        frontCameraFlow.value?.close()
-        backCameraFlow.value?.close()
+        scope.launch {
+            recordAkariGraphicsProcessor?.destroy()
+            previewAkariGraphicsProcessor.value?.destroy()
+            previewFrontCameraAkariSurfaceTexture?.destroy()
+            previewBackCameraAkariSurfaceTexture?.destroy()
+            recordFrontCameraAkariSurfaceTexture?.destroy()
+            recordBackCameraAkariSurfaceTexture?.destroy()
+            frontCameraFlow.value?.close()
+            backCameraFlow.value?.close()
+            cancel()
+        }
     }
 
     /**
@@ -663,15 +548,6 @@ class KomaDroidCameraManager(
     private fun getBackCameraId(): String = cameraManager
         .cameraIdList
         .first { cameraId -> cameraManager.getCameraCharacteristics(cameraId).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK }
-
-    /**
-     * OpenGL 描画のための2点セット。
-     * [InputSurface]、[KomaDroidCameraTextureRenderer]を持っているだけ。
-     */
-    private data class OpenGlDrawPair(
-        val inputSurface: InputSurface,
-        val textureRenderer: KomaDroidCameraTextureRenderer
-    )
 
     /** 静止画撮影 or 録画 */
     enum class CaptureMode {

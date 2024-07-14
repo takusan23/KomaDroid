@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.github.takusan23.komadroid.gl
+package io.github.takusan23.komadroid.akaricore5
 
 import android.opengl.EGL14
 import android.opengl.EGLConfig
