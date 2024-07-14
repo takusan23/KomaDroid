@@ -232,6 +232,7 @@ class AkariGraphicsTextureRenderer(
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, surfaceTextureTextureId)
 
         // 映像を OpenGL ES で使う準備
+        akariSurfaceTexture.detachGl()
         akariSurfaceTexture.attachGl(surfaceTextureTextureId)
         if (isAwaitTextureUpdate) {
             akariSurfaceTexture.awaitUpdateTexImage()

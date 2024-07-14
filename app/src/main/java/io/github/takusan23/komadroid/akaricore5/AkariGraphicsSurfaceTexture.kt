@@ -24,6 +24,9 @@ class AkariGraphicsSurfaceTexture(private val initTexName: Int) {
     private val surfaceTexture = SurfaceTexture(initTexName)
     private val _isAvailableFrameFlow = MutableStateFlow(false)
 
+    /** [SurfaceTexture.detachFromGLContext]したら false */
+    private var isAttach = true
+
     /** SurfaceTexture から新しいフレームが来ているかの Flow */
     val isAvailableFrameFlow = _isAvailableFrameFlow.asStateFlow()
 
@@ -46,14 +49,28 @@ class AkariGraphicsSurfaceTexture(private val initTexName: Int) {
     }
 
     /**
-     * GL コンテキストを切り替え、テクスチャ ID の変更を行う。
-     * GL スレッドから呼び出すこと。
+     * GL コンテキストを切り替え、テクスチャ ID の変更を行う。GL スレッドから呼び出すこと。
+     * [AkariGraphicsProcessor]を切り替える場合に使う。
      *
      * @param texName テクスチャ
      */
     fun attachGl(texName: Int) {
-        surfaceTexture.detachFromGLContext()
-        surfaceTexture.attachToGLContext(texName)
+        // 余計に呼び出さないようにする
+        if (!isAttach) {
+            surfaceTexture.attachToGLContext(texName)
+            isAttach = true
+        }
+    }
+
+    /**
+     * GL コンテキストから切り離す。GL スレッドから呼び出すこと。
+     * [AkariGraphicsProcessor]を再生成するが、[AkariGraphicsSurfaceTexture]自体は作り直さない場合はこれを呼び出す
+     */
+    fun detachGl() {
+        if (isAttach) {
+            surfaceTexture.detachFromGLContext()
+            isAttach = false
+        }
     }
 
     /** 新しいフレームが来るまで待って、[SurfaceTexture.updateTexImage]を呼び出す */

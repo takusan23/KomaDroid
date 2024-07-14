@@ -21,6 +21,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.core.content.contentValuesOf
+import androidx.lifecycle.Lifecycle
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsProcessor
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsSurfaceTexture
 import kotlinx.coroutines.CoroutineScope
@@ -37,8 +38,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -50,6 +51,7 @@ import kotlin.coroutines.resume
 @OptIn(ExperimentalCoroutinesApi::class)
 class KomaDroidCameraManager(
     private val context: Context,
+    lifecycle: Lifecycle,
     private val mode: CaptureMode
 ) {
 
@@ -73,10 +75,10 @@ class KomaDroidCameraManager(
     val surfaceView = SurfaceView(context)
 
     /**
-     * プレビューを表示する[SurfaceView]のコールバックを[Flow]にして、そのついでに[AkariGraphicsProcessor]のインスタンスを生成する。
+     * プレビューを表示する[SurfaceView]のコールバックを[Flow]にする。
      * [SurfaceView]のコールバックがいつ呼ばれても対応できるように、ホットフローに変換して常にコールバックを監視することにする。
      */
-    private val previewAkariGraphicsProcessor = callbackFlow {
+    private val previewSurfaceViewFlow = callbackFlow {
         val callback = object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
                 trySend(holder)
@@ -92,17 +94,6 @@ class KomaDroidCameraManager(
         }
         surfaceView.holder.addCallback(callback)
         awaitClose { surfaceView.holder.removeCallback(callback) }
-    }.map { holder ->
-        if (holder != null) {
-            // OpenGL ES の glViewport と合わせる
-            holder.setFixedSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
-            // Processor を作る
-            AkariGraphicsProcessor(
-                outputSurface = holder.surface,
-                width = CAMERA_RESOLUTION_WIDTH,
-                height = CAMERA_RESOLUTION_HEIGHT
-            ).apply { prepare() }
-        } else null
     }.stateIn(
         scope = scope,
         started = SharingStarted.Eagerly,
@@ -113,17 +104,29 @@ class KomaDroidCameraManager(
     private var recordAkariGraphicsProcessor: AkariGraphicsProcessor? = null
 
     // カメラを開く、Flow なのはコールバックで通知されるので。また、ホットフローに変換して、一度だけ openCamera されるようにします（collect のたびに動かさない）
-    // TODO ライフサイクルを購読する
 
     /** 前面カメラ */
-    private val frontCameraFlow = openCameraFlow(getFrontCameraId()).stateIn(
+    private val frontCameraFlow = lifecycle.currentStateFlow.transformLatest { current ->
+        // onResume のときだけ
+        if (current.isAtLeast(Lifecycle.State.RESUMED)) {
+            openCameraFlow(getFrontCameraId()).collect { camera -> emit(camera) }
+        } else {
+            emit(null)
+        }
+    }.stateIn(
         scope = scope,
         started = SharingStarted.Eagerly,
         initialValue = null
     )
 
     /** 背面カメラ */
-    private val backCameraFlow = openCameraFlow(getBackCameraId()).stateIn(
+    private val backCameraFlow = lifecycle.currentStateFlow.transformLatest { current ->
+        if (current.isAtLeast(Lifecycle.State.RESUMED)) {
+            openCameraFlow(getBackCameraId()).collect { camera -> emit(camera) }
+        } else {
+            emit(null)
+        }
+    }.stateIn(
         scope = scope,
         started = SharingStarted.Eagerly,
         initialValue = null
@@ -153,31 +156,52 @@ class KomaDroidCameraManager(
             }
 
             // カメラ映像を OpenGL ES からテクスチャとして使えるように SurfaceTexture を作る
+            // previewAkariGraphicsProcessor じゃなくて recordAkariGraphicsProcessor でインスタンス生成しているが、
+            // 生成後にプレビュー用の OpenGL コンテキストへアタッチ出来るので、インスタンス生成自体はどの OpenGL コンテキストでもいいはず
             // TODO もしかしたらプレビューと録画用で SurfaceTexture を作る必要がないかも、attach / detach 出来るっぽい
-            generatePreviewSurfaceTexture()
+            previewFrontCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+            previewBackCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+            previewFrontCameraAkariSurfaceTexture?.setResolution()
+            previewBackCameraAkariSurfaceTexture?.setResolution()
 
-            // プレビュー用 OpenGL ES の用意
+            // プレビューへ OpenGL ES で描画する
             // SurfaceView の生成と破棄に合わせて作り直す
             // collectLatest で Flow から新しい値が流れてきたらキャンセルするように
             launch {
-                previewAkariGraphicsProcessor.collectLatest { processor ->
-                    processor ?: return@collectLatest
-                    try {
-                        processor.drawLoop {
-                            previewFrontCameraAkariSurfaceTexture ?: return@drawLoop
-                            previewBackCameraAkariSurfaceTexture ?: return@drawLoop
+                previewSurfaceViewFlow.collectLatest { holder ->
+                    if (holder != null) {
 
-                            // カメラ映像を描画する
-                            drawSurfaceTexture(previewFrontCameraAkariSurfaceTexture!!) { mvpMatrix ->
-                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                        // glViewport に合わせる
+                        holder.setFixedSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+
+                        val previewAkariGraphicsProcessor = AkariGraphicsProcessor(
+                            outputSurface = holder.surface,
+                            width = CAMERA_RESOLUTION_WIDTH,
+                            height = CAMERA_RESOLUTION_HEIGHT
+                        ).apply { prepare() }
+
+                        try {
+                            previewAkariGraphicsProcessor.drawLoop {
+                                // カメラ映像を描画する
+                                drawSurfaceTexture(previewFrontCameraAkariSurfaceTexture!!) { mvpMatrix ->
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                }
+                                drawSurfaceTexture(previewBackCameraAkariSurfaceTexture!!) { mvpMatrix ->
+                                    Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+                                    Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+                                }
                             }
-                            drawSurfaceTexture(previewBackCameraAkariSurfaceTexture!!) { mvpMatrix ->
-                                Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-                                Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+                        } finally {
+                            withContext(NonCancellable) {
+                                // プレビュー Processor が作り直しになる、それつまり OpenGL のコンテキストも作り直しになる
+                                // ので、detachGl で切り離しておく
+                                // OpenGL ES くん、かなりシビア
+                                previewAkariGraphicsProcessor.destroy {
+                                    previewFrontCameraAkariSurfaceTexture?.detachGl()
+                                    previewBackCameraAkariSurfaceTexture?.detachGl()
+                                }
                             }
                         }
-                    } finally {
-                        processor.destroy()
                     }
                 }
             }
@@ -198,14 +222,12 @@ class KomaDroidCameraManager(
                 // 全部非同期なので、Flow にした後、複数の Flow を一つにしてすべての準備ができるのを待つ。
                 combine(
                     frontCameraFlow,
-                    backCameraFlow,
-                    previewAkariGraphicsProcessor
-                ) { a, b, c -> Triple(a, b, c) }.collect { (frontCamera, backCamera, processor) ->
+                    backCameraFlow
+                ) { a, b -> a to b }.collect { (frontCamera, backCamera) ->
 
-                    // フロントカメラ、バックカメラ、プレビューの OpenGL ES がすべて準備完了になるまで待つ
+                    // フロントカメラ、バックカメラがすべて準備完了になるまで待つ
                     frontCamera ?: return@collect
                     backCamera ?: return@collect
-                    processor ?: return@collect
 
                     // フロントカメラの設定
                     // 出力先
@@ -293,14 +315,12 @@ class KomaDroidCameraManager(
                 // 全部非同期なのでコールバックを待つ
                 combine(
                     frontCameraFlow,
-                    backCameraFlow,
-                    previewAkariGraphicsProcessor
-                ) { a, b, c -> Triple(a, b, c) }.collectLatest { (frontCamera, backCamera, processor) ->
+                    backCameraFlow
+                ) { a, b -> a to b }.collectLatest { (frontCamera, backCamera) ->
 
                     // フロントカメラ、バックカメラ、プレビューの OpenGL ES がすべて準備完了になるまで待つ
                     frontCamera ?: return@collectLatest
                     backCamera ?: return@collectLatest
-                    processor ?: return@collectLatest
 
                     // フロントカメラの設定
                     // 出力先
@@ -425,15 +445,6 @@ class KomaDroidCameraManager(
         recordBackCameraAkariSurfaceTexture?.setResolution()
     }
 
-    /** プレビュー用の[AkariGraphicsSurfaceTexture]を作る */
-    private suspend fun generatePreviewSurfaceTexture() {
-        val previewProcessor = previewAkariGraphicsProcessor.filterNotNull().first()
-        previewFrontCameraAkariSurfaceTexture = previewProcessor.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
-        previewBackCameraAkariSurfaceTexture = previewProcessor.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
-        previewFrontCameraAkariSurfaceTexture?.setResolution()
-        previewBackCameraAkariSurfaceTexture?.setResolution()
-    }
-
     /** [AkariGraphicsSurfaceTexture.setTextureSize]を呼び出す */
     private fun AkariGraphicsSurfaceTexture.setResolution() {
         setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
@@ -497,9 +508,6 @@ class KomaDroidCameraManager(
     fun destroy() {
         scope.launch {
             recordAkariGraphicsProcessor?.destroy()
-            previewAkariGraphicsProcessor.value?.destroy()
-            previewFrontCameraAkariSurfaceTexture?.destroy()
-            previewBackCameraAkariSurfaceTexture?.destroy()
             recordFrontCameraAkariSurfaceTexture?.destroy()
             recordBackCameraAkariSurfaceTexture?.destroy()
             frontCameraFlow.value?.close()

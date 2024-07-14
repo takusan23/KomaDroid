@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.takusan23.komadroid.KomaDroidCameraManager
@@ -81,7 +82,14 @@ private fun SwitchModeButton(
 @Composable
 private fun PictureModeScreen() {
     val context = LocalContext.current
-    val cameraManager = remember { KomaDroidCameraManager(context, KomaDroidCameraManager.CaptureMode.PICTURE) }
+    val lifecycle = LocalLifecycleOwner.current
+    val cameraManager = remember {
+        KomaDroidCameraManager(
+            context = context,
+            lifecycle = lifecycle.lifecycle,
+            mode = KomaDroidCameraManager.CaptureMode.PICTURE
+        )
+    }
 
     // カメラを開く、Composable が破棄されたら破棄する
     DisposableEffect(key1 = Unit) {
@@ -113,7 +121,14 @@ private fun PictureModeScreen() {
 @Composable
 private fun VideoModeScreen() {
     val context = LocalContext.current
-    val cameraManager = remember { KomaDroidCameraManager(context, KomaDroidCameraManager.CaptureMode.VIDEO) }
+    val lifecycle = LocalLifecycleOwner.current
+    val cameraManager = remember {
+        KomaDroidCameraManager(
+            context = context,
+            lifecycle = lifecycle.lifecycle,
+            mode = KomaDroidCameraManager.CaptureMode.VIDEO
+        )
+    }
 
     // 仮でここに置かせて
     val isRecording = remember { mutableStateOf(false) }

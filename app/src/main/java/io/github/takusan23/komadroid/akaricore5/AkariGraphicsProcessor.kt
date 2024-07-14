@@ -4,6 +4,7 @@ import android.opengl.GLES20
 import android.view.Surface
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
@@ -55,6 +56,7 @@ class AkariGraphicsProcessor(
             while (isActive) {
                 textureRenderer.prepareDraw()
                 draw(textureRenderer)
+                ensureActive() // draw とかで時間がかかった場合、キャンセル済みかもしれないので  TODO 本当に必要かみる
                 textureRenderer.drawEnd()
                 inputSurface.swapBuffers()
             }
@@ -75,9 +77,18 @@ class AkariGraphicsProcessor(
         }
     }
 
-    suspend fun destroy() {
+    /**
+     * 破棄する
+     * コルーチンキャンセル時に呼び出す場合、[kotlinx.coroutines.NonCancellable]をつけて呼び出す必要があります。
+     *
+     * @param preClean [AkariGraphicsTextureRenderer.destroy]よりも前に呼ばれる
+     */
+    suspend fun destroy(preClean: (suspend () -> Unit)? = null) {
         // 破棄自体も GL 用スレッドで呼び出す必要が多分ある
         withContext(openGlRelatedThreadDispatcher) {
+            if (preClean != null) {
+                preClean()
+            }
             textureRenderer.destroy()
             inputSurface.destroy()
         }
