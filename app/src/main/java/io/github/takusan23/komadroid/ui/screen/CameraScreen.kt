@@ -98,12 +98,15 @@ private fun PictureModeScreen(
         )
 
         // 撮影ボタンとかあるやつ
+        val isMoveEnable = remember { mutableStateOf(false) }
         CameraControlOverlay(
             currentCaptureMode = currentMode,
             onCaptureModeChange = onCaptureModeChange,
             onShutterClick = { cameraManager.takePicture() },
             onFlipClick = { },
-            onSettingButton = { }
+            onSettingButton = { },
+            isMoveEnable = isMoveEnable.value,
+            onMoveEnable = { isMoveEnable.value = !isMoveEnable.value }
         )
     }
 }
@@ -161,7 +164,9 @@ private fun VideoModeScreen(
                 isRecording.value = !isRecording.value
             },
             onFlipClick = { },
-            onSettingButton = { }
+            onSettingButton = { },
+            isMoveEnable = false,
+            onMoveEnable = { }
         )
     }
 }
