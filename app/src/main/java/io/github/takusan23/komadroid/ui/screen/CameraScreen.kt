@@ -1,28 +1,22 @@
 package io.github.takusan23.komadroid.ui.screen
 
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.takusan23.komadroid.KomaDroidCameraManager
+import io.github.takusan23.komadroid.ui.components.CameraControlOverlay
 
 /** カメラ画面 */
 @Composable
@@ -41,46 +35,24 @@ fun CameraScreen() {
 
         // 静止画モード・動画撮影モード
         when (currentMode.value) {
-            KomaDroidCameraManager.CaptureMode.PICTURE -> PictureModeScreen()
-            KomaDroidCameraManager.CaptureMode.VIDEO -> VideoModeScreen()
-        }
+            KomaDroidCameraManager.CaptureMode.PICTURE -> PictureModeScreen(
+                currentMode = currentMode.value,
+                onCaptureModeChange = { currentMode.value = it }
+            )
 
-        // 切り替えボタン
-        SwitchModeButton(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding(),
-            currentMode = currentMode.value,
-            onSelect = { currentMode.value = it }
-        )
+            KomaDroidCameraManager.CaptureMode.VIDEO -> VideoModeScreen(
+                currentMode = currentMode.value,
+                onCaptureModeChange = { currentMode.value = it }
+            )
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwitchModeButton(
-    modifier: Modifier = Modifier,
+private fun PictureModeScreen(
     currentMode: KomaDroidCameraManager.CaptureMode,
-    onSelect: (KomaDroidCameraManager.CaptureMode) -> Unit
+    onCaptureModeChange: (KomaDroidCameraManager.CaptureMode) -> Unit
 ) {
-    SingleChoiceSegmentedButtonRow(modifier = modifier) {
-        KomaDroidCameraManager.CaptureMode.entries.forEachIndexed { index, mode ->
-            SegmentedButton(
-                selected = mode == currentMode,
-                onClick = { onSelect(mode) },
-                shape = SegmentedButtonDefaults.itemShape(
-                    index = index,
-                    count = KomaDroidCameraManager.CaptureMode.entries.size
-                )
-            ) {
-                Text(text = mode.name)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PictureModeScreen() {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val cameraManager = remember {
@@ -105,21 +77,35 @@ private fun PictureModeScreen() {
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
-                .aspectRatio(KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat()),
+                .aspectRatio(KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat())
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        // テクスチャ座標が Y 座標においては反転してるので多分 -= であってる
+                        // イキすぎイクイクすぎるので 1000 で割っている
+                        cameraManager.xPos += (dragAmount.x / 1000f)
+                        cameraManager.yPos -= (dragAmount.y / 1000f)
+                    }
+                },
             factory = { cameraManager.surfaceView }
         )
 
-        Button(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 50.dp),
-            onClick = { cameraManager.takePicture() }
-        ) { Text(text = "写真撮影") }
+        // 撮影ボタンとかあるやつ
+        CameraControlOverlay(
+            currentCaptureMode = currentMode,
+            onCaptureModeChange = onCaptureModeChange,
+            onShutterClick = { cameraManager.takePicture() },
+            onFlipClick = { },
+            onSettingButton = { }
+        )
     }
 }
 
 @Composable
-private fun VideoModeScreen() {
+private fun VideoModeScreen(
+    currentMode: KomaDroidCameraManager.CaptureMode,
+    onCaptureModeChange: (KomaDroidCameraManager.CaptureMode) -> Unit
+) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val cameraManager = remember {
@@ -151,20 +137,20 @@ private fun VideoModeScreen() {
             factory = { cameraManager.surfaceView }
         )
 
-        Button(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 50.dp),
-            onClick = {
+        // 撮影ボタンとかあるやつ
+        CameraControlOverlay(
+            currentCaptureMode = currentMode,
+            onCaptureModeChange = onCaptureModeChange,
+            onShutterClick = {
                 if (isRecording.value) {
                     cameraManager.stopRecordVideo()
                 } else {
                     cameraManager.startRecordVideo()
                 }
                 isRecording.value = !isRecording.value
-            }
-        ) {
-            Text(text = if (isRecording.value) "録画終了" else "録画開始")
-        }
+            },
+            onFlipClick = { },
+            onSettingButton = { }
+        )
     }
 }

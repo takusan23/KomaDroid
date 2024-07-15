@@ -56,6 +56,10 @@ class KomaDroidCameraManager(
     private val mode: CaptureMode
 ) {
 
+    // TODO 位置調整
+    var xPos = 0f
+    var yPos = 0f
+
     private val scope = CoroutineScope(Dispatchers.Default + Job())
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val cameraExecutor = Executors.newSingleThreadExecutor()
@@ -297,7 +301,7 @@ class KomaDroidCameraManager(
 
     /**
      * 動画撮影をする
-     * 静止画撮影用に[CameraDevice.TEMPLATE_RECORD]と[CameraCaptureSession.setRepeatingRequest]が使われます。
+     * 動画撮影用に[CameraDevice.TEMPLATE_RECORD]と[CameraCaptureSession.setRepeatingRequest]が使われます。
      */
     fun startRecordVideo() {
         scope.launch {
@@ -458,6 +462,7 @@ class KomaDroidCameraManager(
         drawSurfaceTexture(frontTexture, isAwaitTextureUpdate) { mvpMatrix ->
             Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
             Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+            Matrix.translateM(mvpMatrix, 0, xPos, yPos, 1f)
         }
     }
 

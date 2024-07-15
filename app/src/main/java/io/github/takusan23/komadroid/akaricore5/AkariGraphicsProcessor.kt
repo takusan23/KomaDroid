@@ -53,11 +53,15 @@ class AkariGraphicsProcessor(
      */
     suspend fun drawLoop(draw: suspend AkariGraphicsTextureRenderer.() -> Unit) {
         withContext(openGlRelatedThreadDispatcher) {
+            // TODO ensureActive() の連続。本当に必要か見る
             while (isActive) {
+                ensureActive()
                 textureRenderer.prepareDraw()
+                ensureActive()
                 draw(textureRenderer)
-                ensureActive() // draw とかで時間がかかった場合、キャンセル済みかもしれないので  TODO 本当に必要かみる
+                ensureActive()
                 textureRenderer.drawEnd()
+                ensureActive()
                 inputSurface.swapBuffers()
             }
         }
