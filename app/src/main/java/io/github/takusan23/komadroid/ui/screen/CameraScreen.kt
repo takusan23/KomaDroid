@@ -1,5 +1,6 @@
 package io.github.takusan23.komadroid.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -11,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -69,10 +71,15 @@ private fun PictureModeScreen(
         onDispose { cameraManager.destroy() }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
 
         // OpenGL ES を描画する SurfaceView
         // アスペクト比
+        // TODO 横画面のアスペクト比
         AndroidView(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -125,7 +132,11 @@ private fun VideoModeScreen(
         onDispose { cameraManager.destroy() }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
 
         // OpenGL ES を描画する SurfaceView
         // アスペクト比
