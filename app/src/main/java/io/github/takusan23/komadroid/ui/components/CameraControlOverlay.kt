@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -133,6 +134,24 @@ private fun Landscape(
     onMoveEnable: (Boolean) -> Unit
 ) {
     Row(modifier = modifier) {
+
+        Column(
+            modifier = Modifier.fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceAround
+        ) {
+
+            MoveEnableButton(
+                modifier = Modifier.graphicsLayer { rotationZ = 270f },
+                isEnable = isMoveEnable,
+                onClick = onMoveEnable
+            )
+
+            ZoomButton(
+                modifier = Modifier.graphicsLayer { rotationZ = 270f },
+                onClick = { }
+            )
+        }
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
