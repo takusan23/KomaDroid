@@ -31,7 +31,7 @@ class AkariGraphicsSurfaceTexture(private val initTexName: Int) {
     val isAvailableFrameFlow = _isAvailableFrameFlow.asStateFlow()
 
     /** [SurfaceTexture]へ映像を渡す[Surface] */
-    val surface = Surface(surfaceTexture)
+    val surface by lazy { Surface(surfaceTexture) } // setDefaultBufferSize の後に Surface() コンストラクタを呼ばないといけない可能性
 
     init {
         surfaceTexture.setOnFrameAvailableListener {

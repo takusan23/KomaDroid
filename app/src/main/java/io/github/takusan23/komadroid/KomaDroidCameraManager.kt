@@ -2,6 +2,7 @@ package io.github.takusan23.komadroid
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.camera2.CameraCaptureSession
@@ -56,15 +57,17 @@ class KomaDroidCameraManager(
     private val mode: CaptureMode
 ) {
 
-    // TODO 位置調整
+    // TODO サイズ、位置調整
+    var scale = 0.5f
     var xPos = 0f
     var yPos = 0f
 
     private val scope = CoroutineScope(Dispatchers.Default + Job())
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val cameraExecutor = Executors.newSingleThreadExecutor()
+    private val isLandScape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    /** 今のタスク（プレビュー、動画撮影）キャンセル用 */
+    /** 今のタスク（動画撮影）キャンセル用 */
     private var currentJob: Job? = null
 
     /** 静止画撮影用[ImageReader] */
@@ -177,12 +180,16 @@ class KomaDroidCameraManager(
                     if (holder != null) {
 
                         // glViewport に合わせる
-                        holder.setFixedSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+                        if (isLandScape) {
+                            holder.setFixedSize(CAMERA_RESOLUTION_HEIGHT, CAMERA_RESOLUTION_WIDTH)
+                        } else {
+                            holder.setFixedSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+                        }
 
                         val previewAkariGraphicsProcessor = AkariGraphicsProcessor(
                             outputSurface = holder.surface,
-                            width = CAMERA_RESOLUTION_WIDTH,
-                            height = CAMERA_RESOLUTION_HEIGHT
+                            width = if (isLandScape) CAMERA_RESOLUTION_HEIGHT else CAMERA_RESOLUTION_WIDTH,
+                            height = if (isLandScape) CAMERA_RESOLUTION_WIDTH else CAMERA_RESOLUTION_HEIGHT
                         ).apply { prepare() }
 
                         try {
@@ -407,16 +414,16 @@ class KomaDroidCameraManager(
     /** 静止画モードの初期化 */
     private suspend fun initPictureMode() {
         imageReader = ImageReader.newInstance(
-            CAMERA_RESOLUTION_WIDTH,
-            CAMERA_RESOLUTION_HEIGHT,
+            if (isLandScape) CAMERA_RESOLUTION_HEIGHT else CAMERA_RESOLUTION_WIDTH,
+            if (isLandScape) CAMERA_RESOLUTION_WIDTH else CAMERA_RESOLUTION_HEIGHT,
             PixelFormat.RGBA_8888,
             2
         )
         // 描画を OpenGL に、プレビューと同じ
         recordAkariGraphicsProcessor = AkariGraphicsProcessor(
             outputSurface = imageReader!!.surface,
-            width = CAMERA_RESOLUTION_WIDTH,
-            height = CAMERA_RESOLUTION_HEIGHT,
+            width = if (isLandScape) CAMERA_RESOLUTION_HEIGHT else CAMERA_RESOLUTION_WIDTH,
+            height = if (isLandScape) CAMERA_RESOLUTION_WIDTH else CAMERA_RESOLUTION_HEIGHT,
         ).apply { prepare() }
         generateRecordSurfaceTexture()
     }
@@ -427,12 +434,16 @@ class KomaDroidCameraManager(
             setAudioSource(MediaRecorder.AudioSource.MIC)
             setVideoSource(MediaRecorder.VideoSource.SURFACE)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+            setVideoEncoder(MediaRecorder.VideoEncoder.H264)// TODO せめて HEVC は使えるように
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             setAudioChannels(2)
-            setVideoEncodingBitRate(3_000_000) // H.264 なので高めに
-            setVideoFrameRate(30)
-            setVideoSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+            setVideoEncodingBitRate(3_000_000) // TODO ビットレート変更機能
+            setVideoFrameRate(30) // TODO フレームレート変更機能
+            if (isLandScape) { // TODO 解像度変更機能
+                setVideoSize(CAMERA_RESOLUTION_HEIGHT, CAMERA_RESOLUTION_WIDTH)
+            } else {
+                setVideoSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+            }
             setAudioEncodingBitRate(128_000)
             setAudioSamplingRate(44_100)
             // 一時的に getExternalFilesDir に保存する
@@ -443,8 +454,8 @@ class KomaDroidCameraManager(
         // 描画を OpenGL に、プレビューと同じ
         recordAkariGraphicsProcessor = AkariGraphicsProcessor(
             outputSurface = mediaRecorder!!.surface,
-            width = CAMERA_RESOLUTION_WIDTH,
-            height = CAMERA_RESOLUTION_HEIGHT,
+            width = if (isLandScape) CAMERA_RESOLUTION_HEIGHT else CAMERA_RESOLUTION_WIDTH,
+            height = if (isLandScape) CAMERA_RESOLUTION_WIDTH else CAMERA_RESOLUTION_HEIGHT,
         ).apply { prepare() }
         generateRecordSurfaceTexture()
     }
@@ -464,11 +475,17 @@ class KomaDroidCameraManager(
     ) {
         // カメラ映像を描画する
         drawSurfaceTexture(backTexture, isAwaitTextureUpdate) { mvpMatrix ->
-            Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
+            if (isLandScape) {
+                // 回転する
+                Matrix.rotateM(mvpMatrix, 0, 90f, 0f, 0f, 1f)
+            }
         }
         drawSurfaceTexture(frontTexture, isAwaitTextureUpdate) { mvpMatrix ->
-            Matrix.scaleM(mvpMatrix, 0, 1.7f, 1f, 1f)
-            Matrix.scaleM(mvpMatrix, 0, 0.3f, 0.3f, 0.3f)
+            if (isLandScape) {
+                // 回転する
+                Matrix.rotateM(mvpMatrix, 0, 90f, 0f, 0f, 1f)
+            }
+            Matrix.scaleM(mvpMatrix, 0, scale, scale, 1f)
             Matrix.translateM(mvpMatrix, 0, xPos, yPos, 1f)
         }
     }
@@ -485,7 +502,9 @@ class KomaDroidCameraManager(
 
     /** [AkariGraphicsSurfaceTexture.setTextureSize]を呼び出す */
     private fun AkariGraphicsSurfaceTexture.setResolution() {
-        setTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+        // 多分横の状態のアスペクト比を入れる。
+        // カメラ側で、縦持ちの場合は、幅と高さを入れ替えてくれる（可能性）
+        setTextureSize(CAMERA_RESOLUTION_HEIGHT, CAMERA_RESOLUTION_WIDTH)
     }
 
     /**
@@ -525,7 +544,13 @@ class KomaDroidCameraManager(
         val readBitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888)
         readBitmap.copyPixelsFromBuffer(buffer)
         // 余分な Padding を消す
-        val editBitmap = Bitmap.createBitmap(readBitmap, 0, 0, CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+        val editBitmap = Bitmap.createBitmap(
+            readBitmap,
+            0,
+            0,
+            if (isLandScape) CAMERA_RESOLUTION_HEIGHT else CAMERA_RESOLUTION_WIDTH,
+            if (isLandScape) CAMERA_RESOLUTION_WIDTH else CAMERA_RESOLUTION_HEIGHT
+        )
         readBitmap.recycle()
         // ギャラリーに登録する
         val contentResolver = context.contentResolver

@@ -3,6 +3,7 @@ package io.github.takusan23.komadroid.ui.screen
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,19 +76,30 @@ fun CameraScreen() {
                     modifier = Modifier
                         .align(Alignment.Center)
                         .aspectRatio(
-                            if (isLandScape) {
+                            ratio = if (isLandScape) {
                                 KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT / KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH.toFloat()
                             } else {
                                 KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat()
                             }
                         )
                         .pointerInput(Unit) {
+                            // ピンチイン、ピンチアウトで拡大縮小
+                            detectTransformGestures { _, _, zoom, _ ->
+                                cameraManager.scale *= zoom
+                            }
+                        }
+                        .pointerInput(Unit) {
                             detectDragGestures { change, dragAmount ->
                                 change.consume()
                                 // テクスチャ座標が Y 座標においては反転してるので多分 -= であってる
                                 // イキすぎイクイクすぎるので 1000 で割っている
-                                cameraManager.xPos += (dragAmount.x / 1000f)
-                                cameraManager.yPos -= (dragAmount.y / 1000f)
+                                if (isLandScape) {
+                                    cameraManager.xPos -= (dragAmount.y / 1000f)
+                                    cameraManager.yPos -= (dragAmount.x / 1000f)
+                                } else {
+                                    cameraManager.xPos += (dragAmount.x / 1000f)
+                                    cameraManager.yPos -= (dragAmount.y / 1000f)
+                                }
                             }
                         },
                     factory = { cameraManager.surfaceView }
@@ -96,10 +108,23 @@ fun CameraScreen() {
 
             // 撮影ボタンとかあるやつ
             val isMoveEnable = remember { mutableStateOf(false) }
+            val isVideoRecording = remember(captureMode.value) { mutableStateOf(false) }
             CameraControlOverlay(
                 currentCaptureMode = captureMode.value,
                 onCaptureModeChange = { captureMode.value = it },
-                onShutterClick = { cameraManager.takePicture() },
+                onShutterClick = {
+                    // TODO いい加減もうちょっと綺麗にしたい
+                    if (captureMode.value == KomaDroidCameraManager.CaptureMode.PICTURE) {
+                        cameraManager.takePicture()
+                    } else {
+                        if (isVideoRecording.value) {
+                            cameraManager.stopRecordVideo()
+                        } else {
+                            cameraManager.startRecordVideo()
+                        }
+                        isVideoRecording.value = !isVideoRecording.value
+                    }
+                },
                 onFlipClick = { },
                 onSettingButton = { },
                 isMoveEnable = isMoveEnable.value,
