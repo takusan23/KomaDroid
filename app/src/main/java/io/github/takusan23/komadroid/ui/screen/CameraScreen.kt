@@ -7,8 +7,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,143 +31,72 @@ fun CameraScreen() {
     // Surface とスレッドが使い回せない以上、録画と静止画撮影ではインスタンスを分けて、別々の SurfaceView を作るしかなさそう。
     // これは Google Tensor が悪いかも。Google Tensor の OpenGL ドライバーいまいち説ある
     // 長々書いたけど InputSurface / Renderer を作り直すのは Google Tensor 都合でできない（すでに一回 Surface + GLES 作ると破棄しても何故か作れない。ANGLE 実装に切り替えると使えなくはないけどスレッド作り直しが必要）
+    // TODO 上記の怪文書は私のミスで、GLES の破棄が GL スレッドじゃなかったから。
 
-    val currentMode = remember { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current
+    val captureMode = remember { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // カメラと描画、録画を司るクラス
+    // remember { } だと suspend fun 呼べないので produceState
+    val cameraManagerOrNull = produceState<KomaDroidCameraManager?>(
+        initialValue = null,
+        key1 = captureMode.value
+    ) {
+        // インスタンスを生成
+        val _cameraManager = KomaDroidCameraManager(
+            context = context,
+            lifecycle = lifecycle.lifecycle,
+            mode = captureMode.value
+        )
+        // カメラや OpenGL ES の初期化する
+        _cameraManager.prepare()
+        value = _cameraManager
+        // 破棄時
+        awaitDispose { _cameraManager.destroy() }
+    }
 
-        // 静止画モード・動画撮影モード
-        when (currentMode.value) {
-            KomaDroidCameraManager.CaptureMode.PICTURE -> PictureModeScreen(
-                currentMode = currentMode.value,
-                onCaptureModeChange = { currentMode.value = it }
-            )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        if (cameraManagerOrNull.value != null) {
+            val cameraManager = cameraManagerOrNull.value!!
 
-            KomaDroidCameraManager.CaptureMode.VIDEO -> VideoModeScreen(
-                currentMode = currentMode.value,
-                onCaptureModeChange = { currentMode.value = it }
+            // OpenGL ES を描画する SurfaceView
+            // アスペクト比
+            // TODO 横画面のアスペクト比
+            key(cameraManager) { // TODO key で強制再コンポジションさせているのでガチアンチパターン
+                AndroidView(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth()
+                        .aspectRatio(KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat())
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                // テクスチャ座標が Y 座標においては反転してるので多分 -= であってる
+                                // イキすぎイクイクすぎるので 1000 で割っている
+                                cameraManager.xPos += (dragAmount.x / 1000f)
+                                cameraManager.yPos -= (dragAmount.y / 1000f)
+                            }
+                        },
+                    factory = { cameraManager.surfaceView }
+                )
+            }
+
+            // 撮影ボタンとかあるやつ
+            val isMoveEnable = remember { mutableStateOf(false) }
+            CameraControlOverlay(
+                currentCaptureMode = captureMode.value,
+                onCaptureModeChange = { captureMode.value = it },
+                onShutterClick = { cameraManager.takePicture() },
+                onFlipClick = { },
+                onSettingButton = { },
+                isMoveEnable = isMoveEnable.value,
+                onMoveEnable = { isMoveEnable.value = !isMoveEnable.value }
             )
         }
-    }
-}
-
-@Composable
-private fun PictureModeScreen(
-    currentMode: KomaDroidCameraManager.CaptureMode,
-    onCaptureModeChange: (KomaDroidCameraManager.CaptureMode) -> Unit
-) {
-    val context = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current
-    val cameraManager = remember {
-        KomaDroidCameraManager(
-            context = context,
-            lifecycle = lifecycle.lifecycle,
-            mode = KomaDroidCameraManager.CaptureMode.PICTURE
-        )
-    }
-
-    // カメラを開く、Composable が破棄されたら破棄する
-    DisposableEffect(key1 = Unit) {
-        cameraManager.prepare()
-        onDispose { cameraManager.destroy() }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-
-        // OpenGL ES を描画する SurfaceView
-        // アスペクト比
-        // TODO 横画面のアスペクト比
-        AndroidView(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .aspectRatio(KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat())
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        // テクスチャ座標が Y 座標においては反転してるので多分 -= であってる
-                        // イキすぎイクイクすぎるので 1000 で割っている
-                        cameraManager.xPos += (dragAmount.x / 1000f)
-                        cameraManager.yPos -= (dragAmount.y / 1000f)
-                    }
-                },
-            factory = { cameraManager.surfaceView }
-        )
-
-        // 撮影ボタンとかあるやつ
-        val isMoveEnable = remember { mutableStateOf(false) }
-        CameraControlOverlay(
-            currentCaptureMode = currentMode,
-            onCaptureModeChange = onCaptureModeChange,
-            onShutterClick = { cameraManager.takePicture() },
-            onFlipClick = { },
-            onSettingButton = { },
-            isMoveEnable = isMoveEnable.value,
-            onMoveEnable = { isMoveEnable.value = !isMoveEnable.value }
-        )
-    }
-}
-
-@Composable
-private fun VideoModeScreen(
-    currentMode: KomaDroidCameraManager.CaptureMode,
-    onCaptureModeChange: (KomaDroidCameraManager.CaptureMode) -> Unit
-) {
-    val context = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current
-    val cameraManager = remember {
-        KomaDroidCameraManager(
-            context = context,
-            lifecycle = lifecycle.lifecycle,
-            mode = KomaDroidCameraManager.CaptureMode.VIDEO
-        )
-    }
-
-    // 仮でここに置かせて
-    val isRecording = remember { mutableStateOf(false) }
-
-    // カメラを開く、Composable が破棄されたら破棄する
-    DisposableEffect(key1 = Unit) {
-        cameraManager.prepare()
-        onDispose { cameraManager.destroy() }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-
-        // OpenGL ES を描画する SurfaceView
-        // アスペクト比
-        AndroidView(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .aspectRatio(KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat()),
-            factory = { cameraManager.surfaceView }
-        )
-
-        // 撮影ボタンとかあるやつ
-        CameraControlOverlay(
-            currentCaptureMode = currentMode,
-            onCaptureModeChange = onCaptureModeChange,
-            onShutterClick = {
-                if (isRecording.value) {
-                    cameraManager.stopRecordVideo()
-                } else {
-                    cameraManager.startRecordVideo()
-                }
-                isRecording.value = !isRecording.value
-            },
-            onFlipClick = { },
-            onSettingButton = { },
-            isMoveEnable = false,
-            onMoveEnable = { }
-        )
     }
 }
