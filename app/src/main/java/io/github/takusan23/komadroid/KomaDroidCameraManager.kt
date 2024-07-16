@@ -192,6 +192,13 @@ class KomaDroidCameraManager(
                                     backTexture = previewBackCameraAkariSurfaceTexture!!
                                 )
                             }
+                        } catch (e: RuntimeException) {
+                            // java.lang.RuntimeException: glBindFramebuffer: glError 1285
+                            // Google Tensor だけ静止画撮影・動画撮影切り替え時に頻繁に落ちる
+                            // Snapdragon だと落ちないのでガチで謎
+                            // もうどうしようもないので checkGlError() の例外をここは無視する
+                            // Google Tensor 、、、許すまじ
+                            e.printStackTrace()
                         } finally {
                             withContext(NonCancellable) {
                                 // プレビュー Processor が作り直しになる、それつまり OpenGL のコンテキストも作り直しになる
