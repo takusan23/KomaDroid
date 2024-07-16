@@ -1,11 +1,11 @@
 package io.github.takusan23.komadroid.ui.screen
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -35,6 +36,8 @@ fun CameraScreen() {
 
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
+
+    val isLandScape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val captureMode = remember { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
 
     // カメラと描画、録画を司るクラス
@@ -71,8 +74,13 @@ fun CameraScreen() {
                 AndroidView(
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .fillMaxWidth()
-                        .aspectRatio(KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat())
+                        .aspectRatio(
+                            if (isLandScape) {
+                                KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT / KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH.toFloat()
+                            } else {
+                                KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat()
+                            }
+                        )
                         .pointerInput(Unit) {
                             detectDragGestures { change, dragAmount ->
                                 change.consume()
