@@ -227,8 +227,6 @@ class KomaDroidCameraTextureRenderer {
 
         // mMVPMatrix リセット
         Matrix.setIdentityM(mMVPMatrix, 0)
-        // アスペクト比、カメラ入力が1:1で、プレビューが16:9で歪むので、よく分からないけど Matrix.scaleM する。謎
-        Matrix.scaleM(mMVPMatrix, 0, 1.7f, 1f, 1f)
 
         backCameraSurfaceTexture?.getTransformMatrix(mSTMatrix)
         GLES20.glUniformMatrix4fv(muSTMatrixHandle, 1, false, mSTMatrix, 0)
@@ -248,8 +246,6 @@ class KomaDroidCameraTextureRenderer {
         Matrix.translateM(mMVPMatrix, 0, 1f - 0.3f, -1f + 0.3f, 1f)
         // 半分ぐらいにする
         Matrix.scaleM(mMVPMatrix, 0, 0.3f, 0.3f, 1f)
-        // アスペクト比、カメラ入力が1:1で、プレビューが16:9で歪むので、よく分からないけど Matrix.scaleM する。謎
-        Matrix.scaleM(mMVPMatrix, 0, 1.7f, 1f, 1f)
 
         // 描画する
         frontCameraSurfaceTexture?.getTransformMatrix(mSTMatrix)

@@ -58,7 +58,7 @@ class KomaDroidCameraManager(
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
-    /** 今のタスク（プレビュー、動画撮影）キャンセル用 */
+    /** 今のタスク（というか動画撮影）キャンセル用 */
     private var currentJob: Job? = null
 
     /** プレビュー用 OpenGL ES のスレッド */
@@ -84,64 +84,6 @@ class KomaDroidCameraManager(
 
     /** 出力先 Surface */
     val surfaceView = SurfaceView(context)
-
-    /**
-     * [SurfaceView]へ OpenGL で描画できるやつ。
-     * GLSurfaceView を使ってないのは録画用と処理を共通にするため。録画用も[OpenGlDrawPair]を使う。
-     * ただ、録画と違い、[SurfaceView]は生成と破棄が非同期コールバックを待つ必要があるため、[OpenGlDrawPair]生成と破棄は別になっている。
-     *
-     * また、[stateIn]でホットフローに変換し、[SurfaceView]のコールバックがいつ呼ばれても大丈夫にする。
-     * [callbackFlow]はコールドフローで、collect するまで動かない、いつコールバックが呼ばれるかわからないため、今回はホットフローに変換している。
-     */
-    /*
-        private val previewOpenGlDrawPairFlow = callbackFlow {
-            val callback = object : SurfaceHolder.Callback {
-                override fun surfaceCreated(holder: SurfaceHolder) {
-                    trySend(holder)
-                }
-
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                    // do nothing
-                }
-
-                override fun surfaceDestroyed(holder: SurfaceHolder) {
-                    trySend(null)
-                }
-            }
-            surfaceView.holder.addCallback(callback)
-            awaitClose { surfaceView.holder.removeCallback(callback) }
-        }.let { surfaceHolderFlow ->
-
-            // リソース開放用に前回の値を持つ
-            var prevPreviewDrawPair: OpenGlDrawPair? = null
-            surfaceHolderFlow.map { holderOrNull ->
-
-                // 前回の OpenGlDrawPair を破棄する
-                withContext(previewGlThreadDispatcher) {
-                    println("#### PREVIEW OPEN GL DESTROY START ####")
-                    prevPreviewDrawPair?.textureRenderer?.destroy()
-                    prevPreviewDrawPair?.inputSurface?.destroy()
-                    println("#### PREVIEW OPEN GL DESTROY FINISH ####")
-                }
-
-                val newDrawPair = if (holderOrNull != null) {
-                    // 新しい SurfaceView で作り直す
-                    withContext(previewGlThreadDispatcher) {
-                        createOpenGlDrawPair(surface = holderOrNull.surface)
-                    }
-                } else {
-                    // SurfaceView が surfaceDestroyed なので null
-                    null
-                }
-                prevPreviewDrawPair = newDrawPair
-                newDrawPair
-            }
-        }.flowOn(previewGlThreadDispatcher).stateIn(
-            scope = scope,
-            started = SharingStarted.Eagerly,
-            initialValue = null
-        )
-    */
 
     /**
      * [SurfaceView]へ OpenGL で描画できるやつ。
@@ -487,8 +429,9 @@ class KomaDroidCameraManager(
         inputSurface.makeCurrent()
         textureRenderer.createShader()
         // カメラ映像の解像度
+        // 縦持ちだとしても、横のまま入れればいいらしい
         // https://developer.android.com/reference/android/hardware/camera2/CameraDevice#createCaptureSession(android.hardware.camera2.params.SessionConfiguration)
-        textureRenderer.setSurfaceTextureSize(CAMERA_RESOLUTION_WIDTH, CAMERA_RESOLUTION_HEIGHT)
+        textureRenderer.setSurfaceTextureSize(width = CAMERA_RESOLUTION_HEIGHT, height = CAMERA_RESOLUTION_WIDTH)
         return OpenGlDrawPair(inputSurface, textureRenderer)
     }
 
@@ -507,56 +450,6 @@ class KomaDroidCameraManager(
             drawPair.inputSurface.swapBuffers()
         }
     }
-
-//    /**
-//     * OpenGL で描画を行う。
-//     * コルーチンがキャンセルされるまでずっと描画するため、一時停止し続けます。
-//     *
-//     * @param previewPair プレビューを描画する[OpenGlDrawPair]
-//     * @param recordPair 録画用[OpenGlDrawPair]
-//     */
-//    private suspend fun loopRenderOpenGl(
-//        previewPair: OpenGlDrawPair,
-//        recordPair: OpenGlDrawPair
-//    ) = coroutineScope {
-//        while (isActive) {
-//            renderOpenGl(previewPair, recordPair)
-//        }
-//    }
-//
-//    /**
-//     * OpenGL の描画を行う
-//     *
-//     * @param previewPair プレビューを描画する[OpenGlDrawPair]
-//     * @param recordPair 録画用[OpenGlDrawPair]
-//     */
-//    private suspend fun renderOpenGl(
-//        previewPair: OpenGlDrawPair,
-//        recordPair: OpenGlDrawPair
-//    ) {
-//        val (previewInputSurface, previewRenderer) = previewPair
-//        val (recordInputSurface, recordRenderer) = recordPair
-//
-//        // プレビューを描画
-//        withContext(previewGlThreadDispatcher) {
-//            if (previewRenderer.isAvailableFrontCameraFrame() || previewRenderer.isAvailableBackCameraFrame()) {
-//                // カメラ映像テクスチャを更新して、描画
-//                previewRenderer.updateFrontCameraTexture()
-//                previewRenderer.updateBackCameraTexture()
-//                previewRenderer.draw()
-//                previewInputSurface.swapBuffers()
-//            }
-//        }
-//        // 録画用も描画
-//        withContext(recordGlThreadDispatcher) {
-//            if (recordRenderer.isAvailableFrontCameraFrame() || recordRenderer.isAvailableBackCameraFrame()) {
-//                recordRenderer.updateFrontCameraTexture()
-//                recordRenderer.updateBackCameraTexture()
-//                recordRenderer.draw()
-//                recordInputSurface.swapBuffers()
-//            }
-//        }
-//    }
 
     /**
      * [SessionConfiguration]が非同期なので、コルーチンで出来るように
