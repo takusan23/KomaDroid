@@ -57,10 +57,10 @@ class KomaDroidCameraManager(
     private val mode: CaptureMode
 ) {
 
-    // TODO サイズ、位置調整
-    var scale = 0.5f
-    var xPos = 0f
-    var yPos = 0f
+    var scale = 0.5f // TODO 拡大縮小
+    var xPos = 0f // TODO X座標
+    var yPos = 0f // TODO Y座標
+    var isFlip = false // TODO 前面背面カメラを入れ替える
 
     private val scope = CoroutineScope(Dispatchers.Default + Job())
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -473,14 +473,18 @@ class KomaDroidCameraManager(
         backTexture: AkariGraphicsSurfaceTexture,
         isAwaitTextureUpdate: Boolean = false
     ) {
+        // 映像を入れ替えるなら
+        val backgroundTexture = if (isFlip) frontTexture else backTexture
+        val popupTexture = if (isFlip) backTexture else frontTexture
+
         // カメラ映像を描画する
-        drawSurfaceTexture(backTexture, isAwaitTextureUpdate) { mvpMatrix ->
+        drawSurfaceTexture(backgroundTexture, isAwaitTextureUpdate) { mvpMatrix ->
             if (isLandScape) {
                 // 回転する
                 Matrix.rotateM(mvpMatrix, 0, 90f, 0f, 0f, 1f)
             }
         }
-        drawSurfaceTexture(frontTexture, isAwaitTextureUpdate) { mvpMatrix ->
+        drawSurfaceTexture(popupTexture, isAwaitTextureUpdate) { mvpMatrix ->
             if (isLandScape) {
                 // 回転する
                 Matrix.rotateM(mvpMatrix, 0, 90f, 0f, 0f, 1f)

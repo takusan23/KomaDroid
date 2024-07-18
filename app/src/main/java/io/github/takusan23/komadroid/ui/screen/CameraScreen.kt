@@ -1,6 +1,7 @@
 package io.github.takusan23.komadroid.ui.screen
 
 import android.content.res.Configuration
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -130,10 +131,17 @@ fun CameraScreen() {
                         isVideoRecording.value = !isVideoRecording.value
                     }
                 },
-                onFlipClick = { },
+                onFlipClick = { cameraManager.isFlip = !cameraManager.isFlip },
                 onSettingButton = { },
                 isMoveEnable = isMoveEnable.value,
-                onMoveEnable = { isMoveEnable.value = !isMoveEnable.value }
+                onMoveEnable = {
+                    isMoveEnable.value = !isMoveEnable.value
+                    Toast.makeText(
+                        context,
+                        if (isMoveEnable.value) "ドラッグで移動、ピンチイン / ピンチアウトで拡大縮小できます。" else "移動、拡大縮小を無効にしました。",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             )
         }
     }
