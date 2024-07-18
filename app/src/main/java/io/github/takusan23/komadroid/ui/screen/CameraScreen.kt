@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -42,8 +43,8 @@ fun CameraScreen() {
 
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
-
     val configuration = LocalConfiguration.current
+
     val isLandScape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val captureMode = remember { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
 
@@ -74,9 +75,9 @@ fun CameraScreen() {
         if (cameraManagerOrNull.value != null) {
             val cameraManager = cameraManagerOrNull.value!!
 
+            val zoomData = cameraManager.cameraZoomDataFlow.collectAsState()
             val isMoveEnable = remember { mutableStateOf(false) }
             val isVideoRecording = remember(captureMode.value) { mutableStateOf(false) }
-            val isOpenZoom = remember { mutableStateOf(false) }
             val currentScreenRotateType = remember { mutableStateOf(ScreenRotateType.UnLockScreenRotation) }
 
             // 画面回転、ロックするとか
@@ -154,7 +155,6 @@ fun CameraScreen() {
                 onSettingButton = { },
                 isMoveEnable = isMoveEnable.value,
                 screenRotateType = currentScreenRotateType.value,
-                onZoomClick = { isOpenZoom.value = !isOpenZoom.value },
                 onScreenRotationClick = {
                     currentScreenRotateType.value = when (currentScreenRotateType.value) {
                         ScreenRotateType.BlockRotationRequest -> ScreenRotateType.BlockRotationRequest
@@ -169,7 +169,9 @@ fun CameraScreen() {
                         if (isMoveEnable.value) "ドラッグで移動、ピンチイン / ピンチアウトで拡大縮小できます。" else "移動、拡大縮小を無効にしました。",
                         Toast.LENGTH_SHORT
                     ).show()
-                }
+                },
+                zoomData = zoomData.value,
+                onZoomChange = { cameraManager.updateZoomData(it) }
             )
         }
     }

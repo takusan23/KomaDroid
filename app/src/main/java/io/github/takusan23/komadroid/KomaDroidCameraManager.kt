@@ -9,6 +9,7 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
@@ -34,14 +35,20 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -66,6 +73,7 @@ class KomaDroidCameraManager(
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private val isLandScape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    private val _cameraZoomDataFlow = MutableStateFlow(CameraZoomData())
 
     /** 今のタスク（動画撮影）キャンセル用 */
     private var currentJob: Job? = null
@@ -147,12 +155,13 @@ class KomaDroidCameraManager(
     private var recordBackCameraAkariSurfaceTexture: AkariGraphicsSurfaceTexture? = null
 
     /** 前面カメラの出力先[Surface]の配列 */
-    private val frontCameraOutputSurfaceList: List<Surface>
-        get() = listOfNotNull(previewFrontCameraAkariSurfaceTexture?.surface, recordFrontCameraAkariSurfaceTexture?.surface)
+    private val frontCameraOutputSurfaceList: List<Surface> by lazy { listOfNotNull(previewFrontCameraAkariSurfaceTexture?.surface, recordFrontCameraAkariSurfaceTexture?.surface) }
 
     /** 背面カメラの出力先[Surface]の配列 */
-    private val backCameraOutputSurfaceList: List<Surface>
-        get() = listOfNotNull(previewBackCameraAkariSurfaceTexture?.surface, recordBackCameraAkariSurfaceTexture?.surface)
+    private val backCameraOutputSurfaceList: List<Surface> by lazy { listOfNotNull(previewBackCameraAkariSurfaceTexture?.surface, recordBackCameraAkariSurfaceTexture?.surface) }
+
+    /** カメラのズーム状態 */
+    val cameraZoomDataFlow = _cameraZoomDataFlow.asStateFlow()
 
     /** 用意をする */
     fun prepare() {
@@ -162,6 +171,9 @@ class KomaDroidCameraManager(
                 CaptureMode.PICTURE -> initPictureMode()
                 CaptureMode.VIDEO -> initVideoMode()
             }
+
+            // カメラのズームがどれだけ出来るか取得して Flow に流す
+            setCameraZoomSpecification()
 
             // カメラ映像を OpenGL ES からテクスチャとして使えるように SurfaceTexture を作る
             // previewAkariGraphicsProcessor じゃなくて recordAkariGraphicsProcessor でインスタンス生成しているが、
@@ -238,26 +250,36 @@ class KomaDroidCameraManager(
                 combine(
                     frontCameraFlow,
                     backCameraFlow
-                ) { a, b -> a to b }.collect { (frontCamera, backCamera) ->
+                ) { a, b -> a to b }.collectLatest { (frontCamera, backCamera) ->
 
                     // フロントカメラ、バックカメラがすべて準備完了になるまで待つ
-                    frontCamera ?: return@collect
-                    backCamera ?: return@collect
+                    frontCamera ?: return@collectLatest
+                    backCamera ?: return@collectLatest
 
                     // フロントカメラの設定
                     // 出力先
                     val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                    }.build()
-                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
-                    frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
+                        setZoomLevel(cameraZoomDataFlow.value.currentFrontCameraZoom)
+                    }
+                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList) ?: return@collectLatest
+                    frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
 
                     // バックカメラの設定
                     val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                    }.build()
-                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
-                    backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
+                        setZoomLevel(cameraZoomDataFlow.value.currentBackCameraZoom)
+                    }
+                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList) ?: return@collectLatest
+                    backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
+
+                    // ズーム状態を監視する
+                    collectZoomLevelFlow(
+                        backCameraCaptureSession = backCameraCaptureSession,
+                        backCameraCaptureRequest = backCameraCaptureRequest,
+                        frontCameraCaptureSession = frontCameraCaptureSession,
+                        frontCameraCaptureRequest = frontCameraCaptureRequest
+                    )
                 }
             }
         }
@@ -281,6 +303,7 @@ class KomaDroidCameraManager(
                 // 出力先
                 val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                     frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                    setZoomLevel(cameraZoomDataFlow.value.currentFrontCameraZoom)
                 }.build()
                 val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
                 frontCameraCaptureSession?.capture(frontCameraCaptureRequest, null, null)
@@ -288,6 +311,7 @@ class KomaDroidCameraManager(
                 // バックカメラの設定
                 val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                     backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                    setZoomLevel(cameraZoomDataFlow.value.currentBackCameraZoom)
                 }.build()
                 val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
                 backCameraCaptureSession?.capture(backCameraCaptureRequest, null, null)
@@ -338,28 +362,43 @@ class KomaDroidCameraManager(
                     // 出力先
                     val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                         frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                    }.build()
-                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
-                    frontCameraCaptureSession?.setRepeatingRequest(frontCameraCaptureRequest, null, null)
+                        setZoomLevel(cameraZoomDataFlow.value.currentFrontCameraZoom)
+                    }
+                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList) ?: return@collectLatest
+                    frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
 
                     // バックカメラの設定
                     val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                         backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                    }.build()
-                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
-                    backCameraCaptureSession?.setRepeatingRequest(backCameraCaptureRequest, null, null)
+                        setZoomLevel(cameraZoomDataFlow.value.currentBackCameraZoom)
+                    }
+                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList) ?: return@collectLatest
+                    backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
 
                     // 録画開始
                     mediaRecorder?.start()
                     try {
-                        // MediaRecorder に OpenGL ES で描画
-                        // 録画中はループするのでこれ以降の処理には進まない
-                        recordAkariGraphicsProcessor?.drawLoop {
-                            drawFrame(
-                                frontTexture = recordFrontCameraAkariSurfaceTexture!!,
-                                backTexture = recordBackCameraAkariSurfaceTexture!!
-                            )
-                        }
+                        listOf(
+                            launch {
+                                // ズームを適用する
+                                collectZoomLevelFlow(
+                                    backCameraCaptureSession = backCameraCaptureSession,
+                                    backCameraCaptureRequest = backCameraCaptureRequest,
+                                    frontCameraCaptureSession = frontCameraCaptureSession,
+                                    frontCameraCaptureRequest = frontCameraCaptureRequest
+                                )
+                            },
+                            launch {
+                                // MediaRecorder に OpenGL ES で描画
+                                // 録画中はループするのでこれ以降の処理には進まない
+                                recordAkariGraphicsProcessor?.drawLoop {
+                                    drawFrame(
+                                        frontTexture = recordFrontCameraAkariSurfaceTexture!!,
+                                        backTexture = recordBackCameraAkariSurfaceTexture!!
+                                    )
+                                }
+                            }
+                        ).joinAll()
                     } finally {
                         // 録画終了処理
                         // stopRecordVideo を呼び出したときか、collectLatest から新しい値が来た時
@@ -571,6 +610,45 @@ class KomaDroidCameraManager(
         image.close()
     }
 
+    /** ズーム状態を更新する */
+    fun updateZoomData(zoomData: CameraZoomData) {
+        // TODO ZoomData.backCameraZoomRange とかは別に分ける、copy で書き換えできないようにしたい
+        _cameraZoomDataFlow.value = zoomData
+    }
+
+    /** カメラのズームをセットして、[CameraCaptureSession.setRepeatingRequest]を再度呼び出す。Flow を購読するので、一時停止し続けます。 */
+    private suspend fun collectZoomLevelFlow(
+        backCameraCaptureSession: CameraCaptureSession,
+        backCameraCaptureRequest: CaptureRequest.Builder,
+        frontCameraCaptureSession: CameraCaptureSession,
+        frontCameraCaptureRequest: CaptureRequest.Builder
+    ) = coroutineScope {
+        // ズーム状態が変化したら適用
+        launch {
+            cameraZoomDataFlow
+                .mapNotNull { it.currentBackCameraZoom }
+                .distinctUntilChanged()
+                .collect { newZoom ->
+                    backCameraCaptureRequest.setZoomLevel(newZoom)
+                    backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
+                }
+        }
+        launch {
+            cameraZoomDataFlow
+                .mapNotNull { it.currentFrontCameraZoom }
+                .distinctUntilChanged()
+                .collect { newZoom ->
+                    frontCameraCaptureRequest.setZoomLevel(newZoom)
+                    frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
+                }
+        }
+    }
+
+    /** [CaptureRequest]にズームの値をいれる */
+    private fun CaptureRequest.Builder.setZoomLevel(zoomLevel: Float) {
+        set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomLevel)
+    }
+
     /**
      * カメラを開く
      * 開くのに成功したら[CameraDevice]を流します。失敗したら null を流します。
@@ -601,6 +679,18 @@ class KomaDroidCameraManager(
         awaitClose { _cameraDevice?.close() }
     }
 
+    /** ズームの情報をセットする */
+    private fun setCameraZoomSpecification() {
+        // Pixel 8 Pro の場合は 0.4944783..30.0 のような値になる
+        val backCameraZoomSpecification = cameraManager.getCameraCharacteristics(getBackCameraId()).get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)?.let { it.lower..it.upper }
+        val frontCameraZoomSpecification = cameraManager.getCameraCharacteristics(getFrontCameraId()).get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)?.let { it.lower..it.upper }
+        _cameraZoomDataFlow.value = CameraZoomData(
+            backCameraZoomRange = backCameraZoomSpecification ?: return,
+            frontCameraZoomRange = frontCameraZoomSpecification ?: return,
+            currentBackCameraZoom = 1f,
+            currentFrontCameraZoom = 1f
+        )
+    }
 
     /** フロントカメラの ID を返す */
     private fun getFrontCameraId(): String = cameraManager
@@ -620,6 +710,14 @@ class KomaDroidCameraManager(
         /** 録画 */
         VIDEO
     }
+
+    /** カメラのズームのデータ */
+    data class CameraZoomData(
+        val backCameraZoomRange: ClosedFloatingPointRange<Float> = 1f..1f,
+        val frontCameraZoomRange: ClosedFloatingPointRange<Float> = 1f..1f,
+        val currentBackCameraZoom: Float = 1f,
+        val currentFrontCameraZoom: Float = 1f
+    )
 
     companion object {
         const val CAMERA_RESOLUTION_WIDTH = 720
