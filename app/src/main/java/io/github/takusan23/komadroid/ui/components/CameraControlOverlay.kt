@@ -21,12 +21,15 @@ import io.github.takusan23.komadroid.KomaDroidCameraManager
 fun CameraControlOverlay(
     modifier: Modifier = Modifier,
     currentCaptureMode: KomaDroidCameraManager.CaptureMode,
+    screenRotateType: ScreenRotateType,
     onCaptureModeChange: (KomaDroidCameraManager.CaptureMode) -> Unit,
     onShutterClick: () -> Unit,
     onFlipClick: () -> Unit,
     onSettingButton: () -> Unit,
     isMoveEnable: Boolean,
-    onMoveEnable: (Boolean) -> Unit
+    onMoveEnable: (Boolean) -> Unit,
+    onScreenRotationClick: () -> Unit,
+    onZoomClick: () -> Unit
 ) {
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -45,7 +48,10 @@ fun CameraControlOverlay(
                 onFlipClick = onFlipClick,
                 onSettingButton = onSettingButton,
                 isMoveEnable = isMoveEnable,
-                onMoveEnable = onMoveEnable
+                onMoveEnable = onMoveEnable,
+                screenRotateType = screenRotateType,
+                onScreenRotationClick = onScreenRotationClick,
+                onZoomClick = onZoomClick
             )
         } else {
             Portrait(
@@ -56,7 +62,10 @@ fun CameraControlOverlay(
                 onFlipClick = onFlipClick,
                 onSettingButton = onSettingButton,
                 isMoveEnable = isMoveEnable,
-                onMoveEnable = onMoveEnable
+                onMoveEnable = onMoveEnable,
+                screenRotateType = screenRotateType,
+                onScreenRotationClick = onScreenRotationClick,
+                onZoomClick = onZoomClick
             )
         }
     }
@@ -66,12 +75,15 @@ fun CameraControlOverlay(
 private fun Portrait(
     modifier: Modifier = Modifier,
     currentCaptureMode: KomaDroidCameraManager.CaptureMode,
+    screenRotateType: ScreenRotateType,
     onCaptureModeChange: (KomaDroidCameraManager.CaptureMode) -> Unit,
     onShutterClick: () -> Unit,
     onFlipClick: () -> Unit,
     onSettingButton: () -> Unit,
     isMoveEnable: Boolean,
-    onMoveEnable: (Boolean) -> Unit
+    onMoveEnable: (Boolean) -> Unit,
+    onScreenRotationClick: () -> Unit,
+    onZoomClick: () -> Unit
 ) {
     Column(
         modifier = modifier,
@@ -83,8 +95,9 @@ private fun Portrait(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceAround
         ) {
+            FlipButton(onClick = onFlipClick)
 
-            ZoomButton(onClick = { })
+            ZoomButton(onClick = onZoomClick)
 
             MoveEnableButton(
                 isEnable = isMoveEnable,
@@ -115,7 +128,11 @@ private fun Portrait(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
-                FlipButton(onClick = onFlipClick)
+                ScreenRotationLockButton(
+                    screenRotateType = screenRotateType,
+                    onClick = onScreenRotationClick
+                )
+
                 SettingButton(onClick = onSettingButton)
             }
         }
@@ -126,12 +143,15 @@ private fun Portrait(
 private fun Landscape(
     modifier: Modifier = Modifier,
     currentCaptureMode: KomaDroidCameraManager.CaptureMode,
+    screenRotateType: ScreenRotateType,
     onCaptureModeChange: (KomaDroidCameraManager.CaptureMode) -> Unit,
     onShutterClick: () -> Unit,
     onFlipClick: () -> Unit,
     onSettingButton: () -> Unit,
     isMoveEnable: Boolean,
-    onMoveEnable: (Boolean) -> Unit
+    onMoveEnable: (Boolean) -> Unit,
+    onScreenRotationClick: () -> Unit,
+    onZoomClick: () -> Unit
 ) {
     Row(modifier = modifier) {
 
@@ -140,7 +160,6 @@ private fun Landscape(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceAround
         ) {
-
             MoveEnableButton(
                 modifier = Modifier.graphicsLayer { rotationZ = 270f },
                 isEnable = isMoveEnable,
@@ -149,8 +168,10 @@ private fun Landscape(
 
             ZoomButton(
                 modifier = Modifier.graphicsLayer { rotationZ = 270f },
-                onClick = { }
+                onClick = onZoomClick
             )
+
+            FlipButton(onClick = onFlipClick)
         }
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -162,7 +183,10 @@ private fun Landscape(
             ) {
                 SettingButton(onClick = onSettingButton)
 
-                FlipButton(onClick = onFlipClick)
+                ScreenRotationLockButton(
+                    screenRotateType = screenRotateType,
+                    onClick = onScreenRotationClick
+                )
             }
 
             Box(

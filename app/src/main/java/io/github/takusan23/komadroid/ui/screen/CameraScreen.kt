@@ -1,5 +1,7 @@
 package io.github.takusan23.komadroid.ui.screen
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -23,6 +26,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.takusan23.komadroid.KomaDroidCameraManager
 import io.github.takusan23.komadroid.ui.components.CameraControlOverlay
+import io.github.takusan23.komadroid.ui.components.ScreenRotateType
 
 /** カメラ画面 */
 @Composable
@@ -39,7 +43,8 @@ fun CameraScreen() {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
 
-    val isLandScape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val configuration = LocalConfiguration.current
+    val isLandScape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val captureMode = remember { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
 
     // カメラと描画、録画を司るクラス
@@ -71,6 +76,17 @@ fun CameraScreen() {
 
             val isMoveEnable = remember { mutableStateOf(false) }
             val isVideoRecording = remember(captureMode.value) { mutableStateOf(false) }
+            val isOpenZoom = remember { mutableStateOf(false) }
+            val currentScreenRotateType = remember { mutableStateOf(ScreenRotateType.UnLockScreenRotation) }
+
+            // 画面回転、ロックするとか
+            LaunchedEffect(key1 = currentScreenRotateType.value) {
+                (context as? Activity)?.requestedOrientation = when (currentScreenRotateType.value) {
+                    ScreenRotateType.BlockRotationRequest -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
+                    ScreenRotateType.UnLockScreenRotation -> ActivityInfo.SCREEN_ORIENTATION_USER
+                    ScreenRotateType.LockScreenRotation -> if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
+            }
 
             // OpenGL ES を描画する SurfaceView
             // アスペクト比
@@ -128,12 +144,24 @@ fun CameraScreen() {
                         } else {
                             cameraManager.startRecordVideo()
                         }
+                        // TODO CameraManager 側にフラグを移動
                         isVideoRecording.value = !isVideoRecording.value
+                        // 録画中は回転しないように
+                        currentScreenRotateType.value = if (isVideoRecording.value) ScreenRotateType.BlockRotationRequest else ScreenRotateType.UnLockScreenRotation
                     }
                 },
                 onFlipClick = { cameraManager.isFlip = !cameraManager.isFlip },
                 onSettingButton = { },
                 isMoveEnable = isMoveEnable.value,
+                screenRotateType = currentScreenRotateType.value,
+                onZoomClick = { isOpenZoom.value = !isOpenZoom.value },
+                onScreenRotationClick = {
+                    currentScreenRotateType.value = when (currentScreenRotateType.value) {
+                        ScreenRotateType.BlockRotationRequest -> ScreenRotateType.BlockRotationRequest
+                        ScreenRotateType.UnLockScreenRotation -> ScreenRotateType.LockScreenRotation
+                        ScreenRotateType.LockScreenRotation -> ScreenRotateType.UnLockScreenRotation
+                    }
+                },
                 onMoveEnable = {
                     isMoveEnable.value = !isMoveEnable.value
                     Toast.makeText(
