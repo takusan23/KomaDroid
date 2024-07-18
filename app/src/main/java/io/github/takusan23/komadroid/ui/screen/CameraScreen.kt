@@ -68,6 +68,9 @@ fun CameraScreen() {
         if (cameraManagerOrNull.value != null) {
             val cameraManager = cameraManagerOrNull.value!!
 
+            val isMoveEnable = remember { mutableStateOf(false) }
+            val isVideoRecording = remember(captureMode.value) { mutableStateOf(false) }
+
             // OpenGL ES を描画する SurfaceView
             // アスペクト比
             // TODO 横画面のアスペクト比
@@ -82,23 +85,27 @@ fun CameraScreen() {
                                 KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat()
                             }
                         )
-                        .pointerInput(Unit) {
-                            // ピンチイン、ピンチアウトで拡大縮小
-                            detectTransformGestures { _, _, zoom, _ ->
-                                cameraManager.scale *= zoom
+                        .pointerInput(isMoveEnable.value) {
+                            if (isMoveEnable.value) {
+                                // ピンチイン、ピンチアウトで拡大縮小
+                                detectTransformGestures { _, _, zoom, _ ->
+                                    cameraManager.scale *= zoom
+                                }
                             }
                         }
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                // テクスチャ座標が Y 座標においては反転してるので多分 -= であってる
-                                // イキすぎイクイクすぎるので 1000 で割っている
-                                if (isLandScape) {
-                                    cameraManager.xPos -= (dragAmount.y / 1000f)
-                                    cameraManager.yPos -= (dragAmount.x / 1000f)
-                                } else {
-                                    cameraManager.xPos += (dragAmount.x / 1000f)
-                                    cameraManager.yPos -= (dragAmount.y / 1000f)
+                        .pointerInput(isMoveEnable.value) {
+                            if (isMoveEnable.value) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    // テクスチャ座標が Y 座標においては反転してるので多分 -= であってる
+                                    // イキすぎイクイクすぎるので 1000 で割っている
+                                    if (isLandScape) {
+                                        cameraManager.xPos -= (dragAmount.y / 1000f)
+                                        cameraManager.yPos -= (dragAmount.x / 1000f)
+                                    } else {
+                                        cameraManager.xPos += (dragAmount.x / 1000f)
+                                        cameraManager.yPos -= (dragAmount.y / 1000f)
+                                    }
                                 }
                             }
                         },
@@ -107,8 +114,6 @@ fun CameraScreen() {
             }
 
             // 撮影ボタンとかあるやつ
-            val isMoveEnable = remember { mutableStateOf(false) }
-            val isVideoRecording = remember(captureMode.value) { mutableStateOf(false) }
             CameraControlOverlay(
                 currentCaptureMode = captureMode.value,
                 onCaptureModeChange = { captureMode.value = it },

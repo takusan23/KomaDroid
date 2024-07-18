@@ -28,7 +28,7 @@ fun MoveEnableButton(
     Surface(
         modifier = modifier,
         onClick = { onClick(!isEnable) },
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.primary,
         shape = CircleShape
     ) {
         Row(
@@ -56,7 +56,7 @@ fun MoveEnableButton(
             Icon(
                 modifier = Modifier.fillMaxHeight(),
                 painter = painterResource(id = if (isEnable) R.drawable.ic_check_24 else R.drawable.ic_block_24),
-                tint = if (isEnable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                tint = if (isEnable) LocalContentColor.current else MaterialTheme.colorScheme.error,
                 contentDescription = null
             )
         }

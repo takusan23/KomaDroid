@@ -22,7 +22,7 @@ fun ZoomButton(
     Surface(
         modifier = modifier,
         onClick = onClick,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.primary,
         shape = CircleShape
     ) {
         Row(
