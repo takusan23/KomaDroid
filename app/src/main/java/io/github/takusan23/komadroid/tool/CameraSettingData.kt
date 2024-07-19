@@ -9,6 +9,10 @@ data class CameraSettingData(
     val cameraFps: Fps
 ) {
 
+    /** フロント、バックカメラの解像度のうち、どちらか大きい方を返す */
+    val highestResolution: Resolution
+        get() = listOf(frontCameraResolution, backCameraResolution).maxBy { it.ordinal }
+
     enum class VideoCodec(val key: String) {
         AVC("avc"),
         HEVC("hevc");
@@ -18,24 +22,35 @@ data class CameraSettingData(
         }
     }
 
-    enum class Resolution(val key: String) {
-        RESOLUTION_720P("720p"),
-        RESOLUTION_1080P("1080p"),
-        RESOLUTION_2160P("2160p");
+    enum class Resolution(val key: String, val width: Int, val height: Int) {
+        RESOLUTION_720P("720p", 1280, 720),
+        RESOLUTION_1080P("1080p", 1920, 1080),
+        RESOLUTION_2160P("2160p", 3840, 2160);
+
+        /** 横画面用 */
+        val landscape: Size
+            get() = Size(width, height)
+
+        /** 縦画面用 */
+        val portrait: Size
+            get() = Size(height, width)
 
         companion object {
             fun resolve(key: String) = entries.first { it.key == key }
         }
+
     }
 
-    enum class Fps(val key: String) {
-        FPS_30("30fps"),
-        FPS_60("60fps");
+    enum class Fps(val key: String, val fps: Int) {
+        FPS_30("30fps", 30),
+        FPS_60("60fps", 60);
 
         companion object {
             fun resolve(key: String) = Fps.entries.first { it.key == key }
         }
     }
+
+    data class Size(val width: Int, val height: Int)
 
     companion object {
 

@@ -81,7 +81,7 @@ fun CameraScreen() {
             val cameraManager = cameraManagerOrNull.value!!
 
             val zoomData = cameraManager.cameraZoomDataFlow.collectAsState()
-            val settingData = cameraManager.settingDataFlow.collectAsState(initial = null)
+            val cameraSettingData = cameraManager.settingDataFlow.collectAsState(initial = null)
 
             val isMoveEnable = remember { mutableStateOf(false) }
             val isVideoRecording = remember(captureMode.value) { mutableStateOf(false) }
@@ -98,27 +98,28 @@ fun CameraScreen() {
             }
 
             // 設定を開くか
-            if (settingData.value != null && isSettingOpen.value) {
+            if (cameraSettingData.value != null && isSettingOpen.value) {
                 SettingSheet(
                     onDismiss = { isSettingOpen.value = false },
-                    settingData = settingData.value!!,
+                    settingData = cameraSettingData.value!!,
                     onSettingUpdate = { scope.launch { DataStoreTool.writeData(context, it) } }
                 )
             }
 
             // OpenGL ES を描画する SurfaceView
             // アスペクト比
-            // TODO 横画面のアスペクト比
             key(cameraManager) { // TODO key で強制再コンポジションさせているのでガチアンチパターン
                 AndroidView(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .aspectRatio(
-                            ratio = if (isLandScape) {
-                                KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT / KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH.toFloat()
-                            } else {
-                                KomaDroidCameraManager.CAMERA_RESOLUTION_WIDTH / KomaDroidCameraManager.CAMERA_RESOLUTION_HEIGHT.toFloat()
-                            }
+                            ratio = cameraSettingData.value?.let { settingData ->
+                                if (isLandScape) {
+                                    settingData.highestResolution.landscape.let { size -> size.height / size.width.toFloat() }
+                                } else {
+                                    settingData.highestResolution.portrait.let { size -> size.width / size.height.toFloat() }
+                                }
+                            } ?: 1f
                         )
                         .pointerInput(isMoveEnable.value) {
                             if (isMoveEnable.value) {
