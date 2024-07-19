@@ -78,7 +78,7 @@ class KomaDroidCameraManager(
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private val isLandScape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    private val _cameraZoomDataFlow = MutableStateFlow(CameraZoomData())
+    private val _cameraZoomDataFlow = MutableStateFlow(getCameraZoomSpecification())
 
     /** 今のタスク（動画撮影）キャンセル用 */
     private var currentJob: Job? = null
