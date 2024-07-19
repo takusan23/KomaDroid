@@ -160,10 +160,12 @@ class KomaDroidCameraManager(
     private var recordBackCameraAkariSurfaceTexture: AkariGraphicsSurfaceTexture? = null
 
     /** 前面カメラの出力先[Surface]の配列 */
-    private val frontCameraOutputSurfaceList: List<Surface> by lazy { listOfNotNull(previewFrontCameraAkariSurfaceTexture?.surface, recordFrontCameraAkariSurfaceTexture?.surface) }
+    private val frontCameraOutputSurfaceList: List<Surface>
+        get() = listOfNotNull(previewFrontCameraAkariSurfaceTexture?.surface, recordFrontCameraAkariSurfaceTexture?.surface)
 
     /** 背面カメラの出力先[Surface]の配列 */
-    private val backCameraOutputSurfaceList: List<Surface> by lazy { listOfNotNull(previewBackCameraAkariSurfaceTexture?.surface, recordBackCameraAkariSurfaceTexture?.surface) }
+    private val backCameraOutputSurfaceList: List<Surface>
+        get() = listOfNotNull(previewBackCameraAkariSurfaceTexture?.surface, recordBackCameraAkariSurfaceTexture?.surface)
 
     /** カメラのズーム状態 */
     val cameraZoomDataFlow = _cameraZoomDataFlow.asStateFlow()
