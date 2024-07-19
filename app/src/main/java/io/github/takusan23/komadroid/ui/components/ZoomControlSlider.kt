@@ -9,10 +9,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -22,10 +22,11 @@ fun ZoomControlSlider(
     zoomRange: ClosedFloatingPointRange<Float>,
     onZoomChange: (Float) -> Unit
 ) {
+    val contentColor = contentColorFor(MaterialTheme.colorScheme.primary)
     val sliderColors = SliderDefaults.colors(
-        activeTrackColor = Color.White,
-        inactiveTrackColor = Color.White,
-        thumbColor = Color.White
+        activeTrackColor = contentColor,
+        inactiveTrackColor = contentColor,
+        thumbColor = contentColor
     )
 
     Surface(

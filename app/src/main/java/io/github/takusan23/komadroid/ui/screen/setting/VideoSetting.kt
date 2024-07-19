@@ -33,7 +33,7 @@ fun VideoSetting(
         DropdownSettingItem(
             title = "フレームレート",
             description = "動画の滑らかさです",
-            selectIndex = 0,
+            selectIndex = settingData.cameraFps.ordinal,
             menu = remember { CameraSettingData.Fps.entries.map { it.menuLabel } },
             onSelect = { onUpdate(settingData.copy(cameraFps = CameraSettingData.Fps.entries[it])) }
         )
