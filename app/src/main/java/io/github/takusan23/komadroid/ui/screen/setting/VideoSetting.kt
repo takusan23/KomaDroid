@@ -1,9 +1,11 @@
 package io.github.takusan23.komadroid.ui.screen.setting
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import io.github.takusan23.komadroid.tool.CameraSettingData
+import io.github.takusan23.komadroid.tool.NumberFormat
 import io.github.takusan23.komadroid.ui.components.DropdownSettingItem
 import io.github.takusan23.komadroid.ui.components.IntValueSettingItem
 
@@ -24,7 +26,8 @@ fun VideoSetting(
             title = "ビットレート",
             description = "1秒間に利用するデータ量です",
             value = settingData.videoBitrate,
-            onChange = { onUpdate(settingData.copy(videoBitrate = it)) }
+            onChange = { onUpdate(settingData.copy(videoBitrate = it)) },
+            suffix = { Text(text = NumberFormat.formatByteUnit(settingData.videoBitrate)) }
         )
 
         DropdownSettingItem(

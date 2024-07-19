@@ -29,11 +29,10 @@ fun ZoomControlOpenButton(
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.primary,
-        contentColor = Color.White,
         shape = CircleShape
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 5.dp),
+            modifier = Modifier.padding(horizontal = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

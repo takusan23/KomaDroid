@@ -92,6 +92,7 @@ fun IntValueSettingItem(
     modifier: Modifier = Modifier,
     title: String,
     description: String? = null,
+    suffix: (@Composable () -> Unit)? = null,
     value: Int,
     onChange: (Int) -> Unit
 ) {
@@ -115,7 +116,8 @@ fun IntValueSettingItem(
         OutlinedIntTextField(
             modifier = Modifier.weight(1f),
             value = value,
-            onValueChange = onChange
+            onValueChange = onChange,
+            suffix = suffix
         )
     }
 }

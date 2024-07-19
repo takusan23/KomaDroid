@@ -31,7 +31,6 @@ fun ZoomControlSlider(
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.primary,
-        contentColor = Color.White,
         shape = CircleShape
     ) {
         Row(

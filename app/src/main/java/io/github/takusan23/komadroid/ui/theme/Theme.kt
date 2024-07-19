@@ -2,7 +2,6 @@ package io.github.takusan23.komadroid.ui.theme
 
 import android.app.Activity
 import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -37,7 +36,7 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun KomaDroidTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean =  /* isSystemInDarkTheme(), */  true, // カメラアプリなので常に黒基調の UI にする
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit

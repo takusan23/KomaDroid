@@ -56,7 +56,7 @@ fun MoveEnableButton(
             Icon(
                 modifier = Modifier.fillMaxHeight(),
                 painter = painterResource(id = if (isEnable) R.drawable.ic_check_24 else R.drawable.ic_block_24),
-                tint = if (isEnable) LocalContentColor.current else MaterialTheme.colorScheme.error,
+                tint = if (isEnable) LocalContentColor.current else MaterialTheme.colorScheme.onError,
                 contentDescription = null
             )
         }
