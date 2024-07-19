@@ -27,6 +27,8 @@ import androidx.lifecycle.Lifecycle
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsProcessor
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsSurfaceTexture
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsTextureRenderer
+import io.github.takusan23.komadroid.tool.DataStoreTool
+import io.github.takusan23.komadroid.tool.dataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -45,6 +47,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
@@ -162,6 +165,9 @@ class KomaDroidCameraManager(
 
     /** カメラのズーム状態 */
     val cameraZoomDataFlow = _cameraZoomDataFlow.asStateFlow()
+
+    /** DataStore から設定を読み出して [io.github.takusan23.komadroid.tool.CameraSettingData] を作る */
+    val settingDataFlow = context.dataStore.data.map { DataStoreTool.readData(context) }
 
     /** 用意をする */
     fun prepare() {

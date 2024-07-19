@@ -17,6 +17,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,8 +27,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.takusan23.komadroid.KomaDroidCameraManager
+import io.github.takusan23.komadroid.tool.DataStoreTool
 import io.github.takusan23.komadroid.ui.components.CameraControlOverlay
 import io.github.takusan23.komadroid.ui.components.ScreenRotateType
+import io.github.takusan23.komadroid.ui.screen.setting.SettingSheet
+import kotlinx.coroutines.launch
 
 /** カメラ画面 */
 @Composable
@@ -44,6 +48,7 @@ fun CameraScreen() {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val configuration = LocalConfiguration.current
+    val scope = rememberCoroutineScope()
 
     val isLandScape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val captureMode = remember { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
@@ -76,9 +81,12 @@ fun CameraScreen() {
             val cameraManager = cameraManagerOrNull.value!!
 
             val zoomData = cameraManager.cameraZoomDataFlow.collectAsState()
+            val settingData = cameraManager.settingDataFlow.collectAsState(initial = null)
+
             val isMoveEnable = remember { mutableStateOf(false) }
             val isVideoRecording = remember(captureMode.value) { mutableStateOf(false) }
             val currentScreenRotateType = remember { mutableStateOf(ScreenRotateType.UnLockScreenRotation) }
+            val isSettingOpen = remember { mutableStateOf(false) }
 
             // 画面回転、ロックするとか
             LaunchedEffect(key1 = currentScreenRotateType.value) {
@@ -87,6 +95,15 @@ fun CameraScreen() {
                     ScreenRotateType.UnLockScreenRotation -> ActivityInfo.SCREEN_ORIENTATION_USER
                     ScreenRotateType.LockScreenRotation -> if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 }
+            }
+
+            // 設定を開くか
+            if (settingData.value != null && isSettingOpen.value) {
+                SettingSheet(
+                    onDismiss = { isSettingOpen.value = false },
+                    settingData = settingData.value!!,
+                    onSettingUpdate = { scope.launch { DataStoreTool.writeData(context, it) } }
+                )
             }
 
             // OpenGL ES を描画する SurfaceView
@@ -152,7 +169,7 @@ fun CameraScreen() {
                     }
                 },
                 onFlipClick = { cameraManager.isFlip = !cameraManager.isFlip },
-                onSettingButton = { },
+                onSettingButton = { isSettingOpen.value = !isSettingOpen.value },
                 isMoveEnable = isMoveEnable.value,
                 screenRotateType = currentScreenRotateType.value,
                 onScreenRotationClick = {
