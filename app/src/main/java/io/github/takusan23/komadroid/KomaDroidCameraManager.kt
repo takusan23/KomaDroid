@@ -309,56 +309,56 @@ class KomaDroidCameraManager(
     }
 
     /**
-     * 静止画撮影する
+     * 静止画撮影する。撮影が終わるまで一時停止します。
      * 静止画撮影用に[CameraDevice.TEMPLATE_STILL_CAPTURE]と[CameraCaptureSession.capture]が使われます。
      */
-    fun takePicture() {
-        scope.launch {
-            // キャンセルして、コルーチンが終わるのを待つ
-            currentJob?.cancelAndJoin()
-            currentJob = launch {
+    suspend fun takePicture() {
+        // キャンセルして、コルーチンが終わるのを待つ
+        currentJob?.cancelAndJoin()
+        currentJob = scope.launch {
 
-                // 用意が揃うまで待つ
-                val frontCamera = frontCameraFlow.filterNotNull().first()
-                val backCamera = backCameraFlow.filterNotNull().first()
-                val cameraSetting = settingDataFlow.filterNotNull().first()
+            // 用意が揃うまで待つ
+            val frontCamera = frontCameraFlow.filterNotNull().first()
+            val backCamera = backCameraFlow.filterNotNull().first()
+            val cameraSetting = settingDataFlow.filterNotNull().first()
 
-                // フロントカメラの設定
-                // 出力先
-                val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                    frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                    set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
-                }.build()
-                val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
-                frontCameraCaptureSession?.capture(frontCameraCaptureRequest, null, null)
+            // フロントカメラの設定
+            // 出力先
+            val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
+            }.build()
+            val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
+            frontCameraCaptureSession?.capture(frontCameraCaptureRequest, null, null)
 
-                // バックカメラの設定
-                val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                    backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                    set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
-                }.build()
-                val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
-                backCameraCaptureSession?.capture(backCameraCaptureRequest, null, null)
+            // バックカメラの設定
+            val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
+            }.build()
+            val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
+            backCameraCaptureSession?.capture(backCameraCaptureRequest, null, null)
 
-                // ImageReader に OpenGL ES で描画する
-                // プレビューと違ってテクスチャが来るのを待つ
-                recordAkariGraphicsProcessor?.drawOneshot {
-                    drawFrame(
-                        frontTexture = recordFrontCameraAkariSurfaceTexture!!,
-                        backTexture = recordBackCameraAkariSurfaceTexture!!,
-                        isAwaitTextureUpdate = true
-                    )
-                }
-                // ImageReader で取り出す
-                imageReader?.saveJpegImage(cameraSetting)
-
-                // 撮影したらプレビューに戻す
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "保存しました", Toast.LENGTH_SHORT).show()
-                }
-                startPreview()
+            // ImageReader に OpenGL ES で描画する
+            // プレビューと違ってテクスチャが来るのを待つ
+            recordAkariGraphicsProcessor?.drawOneshot {
+                drawFrame(
+                    frontTexture = recordFrontCameraAkariSurfaceTexture!!,
+                    backTexture = recordBackCameraAkariSurfaceTexture!!,
+                    isAwaitTextureUpdate = true
+                )
             }
+            // ImageReader で取り出す
+            imageReader?.saveJpegImage(cameraSetting)
+
+            // 撮影したらプレビューに戻す
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "保存しました", Toast.LENGTH_SHORT).show()
+            }
+            startPreview()
         }
+        // 終わるのを待つ
+        currentJob?.join()
     }
 
     /**
@@ -469,15 +469,16 @@ class KomaDroidCameraManager(
         }
     }
 
-    /** [startRecordVideo]を終了する */
-    fun stopRecordVideo() {
+    /** [startRecordVideo]を終了する。終了できるまで一時停止します。 */
+    suspend fun stopRecordVideo() {
         // startRecordVideo の finally に進みます
-        currentJob?.cancel()
+        currentJob?.cancelAndJoin()
     }
 
     /** 破棄時に呼び出す。Activity の onDestroy とかで呼んでください。 */
     fun destroy() {
         scope.launch {
+            currentJob?.cancel()
             recordAkariGraphicsProcessor?.destroy()
             recordFrontCameraAkariSurfaceTexture?.destroy()
             recordBackCameraAkariSurfaceTexture?.destroy()

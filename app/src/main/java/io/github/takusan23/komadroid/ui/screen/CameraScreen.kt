@@ -22,9 +22,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.takusan23.komadroid.KomaDroidCameraManager
@@ -36,7 +38,7 @@ import kotlinx.coroutines.launch
 
 /** カメラ画面 */
 @Composable
-fun CameraScreen() {
+fun CameraScreen(onNavigation: (MainScreenNavigation) -> Unit) {
     // TODO これ静止画撮影と動画撮影でインスタンス分ける
     // どうやら、Google Tensor は一度でも GLES にバインドしたことのある Surface は他の GLES にはバインドできない
     // Surface そのままで、GLES だけ作り直すのができない。
@@ -50,6 +52,7 @@ fun CameraScreen() {
     val lifecycle = LocalLifecycleOwner.current
     val configuration = LocalConfiguration.current
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     val isLandScape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val captureMode = rememberSaveable { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
@@ -109,7 +112,8 @@ fun CameraScreen() {
                         scope.launch { DataStoreTool.writeData(context, currentSettingData.value) }
                     },
                     settingData = currentSettingData.value,
-                    onSettingUpdate = { currentSettingData.value = it }
+                    onSettingUpdate = { currentSettingData.value = it },
+                    onNavigation = onNavigation
                 )
             }
 
@@ -157,16 +161,20 @@ fun CameraScreen() {
                 currentCaptureMode = captureMode.value,
                 onCaptureModeChange = { captureMode.value = it },
                 onShutterClick = {
-                    // TODO いい加減もうちょっと綺麗にしたい
-                    if (captureMode.value == KomaDroidCameraManager.CaptureMode.PICTURE) {
-                        cameraManager.takePicture()
-                    } else {
-                        if (isVideoRecording.value) {
-                            cameraManager.stopRecordVideo()
-                            currentScreenRotateType.value = ScreenRotateType.UnLockScreenRotation
+                    scope.launch {
+                        // TODO いい加減もうちょっと綺麗にしたい
+                        if (captureMode.value == KomaDroidCameraManager.CaptureMode.PICTURE) {
+                            cameraManager.takePicture()
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         } else {
-                            cameraManager.startRecordVideo()
-                            currentScreenRotateType.value = ScreenRotateType.BlockRotationRequest // 録画中は回転しないように
+                            if (isVideoRecording.value) {
+                                cameraManager.stopRecordVideo()
+                                currentScreenRotateType.value = ScreenRotateType.UnLockScreenRotation
+                            } else {
+                                cameraManager.startRecordVideo()
+                                currentScreenRotateType.value = ScreenRotateType.BlockRotationRequest // 録画中は回転しないように
+                            }
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
                     }
                 },

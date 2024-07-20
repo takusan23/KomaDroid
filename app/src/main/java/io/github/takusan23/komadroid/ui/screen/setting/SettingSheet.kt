@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import io.github.takusan23.komadroid.tool.CameraSettingData
 import io.github.takusan23.komadroid.ui.components.SettingTabMenu
+import io.github.takusan23.komadroid.ui.screen.MainScreenNavigation
 
 private enum class Menu(val title: String) {
     CameraSetting("カメラ設定"),
@@ -29,7 +30,8 @@ fun SettingSheet(
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
     settingData: CameraSettingData,
-    onSettingUpdate: (CameraSettingData) -> Unit
+    onSettingUpdate: (CameraSettingData) -> Unit,
+    onNavigation: (MainScreenNavigation) -> Unit
 ) {
     val configuration = LocalConfiguration.current
     val isLandScape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -49,7 +51,8 @@ fun SettingSheet(
     ) {
         SettingScreen(
             settingData = settingData,
-            onSettingUpdate = onSettingUpdate
+            onSettingUpdate = onSettingUpdate,
+            onNavigation = onNavigation
         )
     }
 }
@@ -57,7 +60,8 @@ fun SettingSheet(
 @Composable
 private fun SettingScreen(
     settingData: CameraSettingData,
-    onSettingUpdate: (CameraSettingData) -> Unit
+    onSettingUpdate: (CameraSettingData) -> Unit,
+    onNavigation: (MainScreenNavigation) -> Unit
 ) {
     val currentPage = remember { mutableStateOf(Menu.CameraSetting) }
 
@@ -80,7 +84,7 @@ private fun SettingScreen(
                 onUpdate = onSettingUpdate
             )
 
-            Menu.Other -> OtherSetting()
+            Menu.Other -> OtherSetting(onNavigation = onNavigation)
         }
     }
 }
