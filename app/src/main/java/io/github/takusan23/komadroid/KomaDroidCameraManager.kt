@@ -312,7 +312,7 @@ class KomaDroidCameraManager(
      * 静止画撮影する。撮影が終わるまで一時停止します。
      * 静止画撮影用に[CameraDevice.TEMPLATE_STILL_CAPTURE]と[CameraCaptureSession.capture]が使われます。
      */
-    suspend fun takePicture() {
+    suspend fun awaitTakePicture() {
         // キャンセルして、コルーチンが終わるのを待つ
         currentJob?.cancelAndJoin()
         currentJob = scope.launch {
@@ -470,7 +470,7 @@ class KomaDroidCameraManager(
     }
 
     /** [startRecordVideo]を終了する。終了できるまで一時停止します。 */
-    suspend fun stopRecordVideo() {
+    suspend fun awaitStopRecordVideo() {
         // startRecordVideo の finally に進みます
         currentJob?.cancelAndJoin()
     }

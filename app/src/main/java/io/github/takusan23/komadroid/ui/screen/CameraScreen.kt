@@ -164,11 +164,11 @@ fun CameraScreen(onNavigation: (MainScreenNavigation) -> Unit) {
                     scope.launch {
                         // TODO いい加減もうちょっと綺麗にしたい
                         if (captureMode.value == KomaDroidCameraManager.CaptureMode.PICTURE) {
-                            cameraManager.takePicture()
+                            cameraManager.awaitTakePicture()
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         } else {
                             if (isVideoRecording.value) {
-                                cameraManager.stopRecordVideo()
+                                cameraManager.awaitStopRecordVideo()
                                 currentScreenRotateType.value = ScreenRotateType.UnLockScreenRotation
                             } else {
                                 cameraManager.startRecordVideo()
