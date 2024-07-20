@@ -10,6 +10,7 @@ import io.github.takusan23.komadroid.ui.components.ClickSettingItem
 import io.github.takusan23.komadroid.ui.screen.MainScreenNavigation
 
 private const val GitHubUrl = "https://github.com/takusan23/KomaDroid"
+private const val PrivacyPolicyUrl = "https://github.com/takusan23/KomaDroid/blob/master/PRIVACY_POLICY.md"
 
 @Composable
 fun OtherSetting(onNavigation: (MainScreenNavigation) -> Unit) {
@@ -17,6 +18,14 @@ fun OtherSetting(onNavigation: (MainScreenNavigation) -> Unit) {
     val appVersion = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
 
     Column {
+        ClickSettingItem(
+            title = "プライバシーポリシー",
+            description = "端末の中で処理されます。",
+            onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, PrivacyPolicyUrl.toUri())
+                context.startActivity(intent)
+            }
+        )
 
         ClickSettingItem(
             title = "ライセンス",
