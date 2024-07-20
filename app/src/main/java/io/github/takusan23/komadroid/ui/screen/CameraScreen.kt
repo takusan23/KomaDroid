@@ -100,10 +100,16 @@ fun CameraScreen() {
 
             // 設定を開くか
             if (cameraSettingData.value != null && isSettingOpen.value) {
+                // TODO 設定内容を KomaDroidCameraManager でも監視していて、高頻度で設定内容を書き換えると startPreview() がエラーになる。
+                // TODO 仕方ないので閉じたときだけ設定を保存するようにした。
+                val currentSettingData = remember { mutableStateOf(cameraSettingData.value!!) }
                 SettingSheet(
-                    onDismiss = { isSettingOpen.value = false },
-                    settingData = cameraSettingData.value!!,
-                    onSettingUpdate = { scope.launch { DataStoreTool.writeData(context, it) } }
+                    onDismiss = {
+                        isSettingOpen.value = false
+                        scope.launch { DataStoreTool.writeData(context, currentSettingData.value) }
+                    },
+                    settingData = currentSettingData.value,
+                    onSettingUpdate = { currentSettingData.value = it }
                 )
             }
 

@@ -207,6 +207,7 @@ class KomaDroidCameraManager(
                 previewBackCameraAkariSurfaceTexture?.setResolution(cameraSetting)
 
                 // プレビューを開始する
+                // TODO 三連続ぐらい startPreview() を呼び出すと落ちる
                 startPreview()
 
                 // プレビューへ OpenGL ES で描画する
