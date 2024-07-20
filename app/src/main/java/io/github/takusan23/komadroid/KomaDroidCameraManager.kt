@@ -274,12 +274,14 @@ class KomaDroidCameraManager(
                     // フロントカメラ、バックカメラがすべて準備完了になるまで待つ
                     frontCamera ?: return@collectLatest
                     backCamera ?: return@collectLatest
+                    val cameraSettingData = settingDataFlow.filterNotNull().first()
 
                     // フロントカメラの設定
                     // 出力先
                     val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                         set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
+                        set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
                     }
                     val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList) ?: return@collectLatest
                     frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
@@ -288,6 +290,7 @@ class KomaDroidCameraManager(
                     val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                         set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
+                        set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
                     }
                     val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList) ?: return@collectLatest
                     backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
@@ -386,7 +389,7 @@ class KomaDroidCameraManager(
                         set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
                         set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
                     }
-                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList) ?: return@collectLatest
+                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList, { it.sessionParameters = frontCameraCaptureRequest.build() }) ?: return@collectLatest
                     frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
 
                     // バックカメラの設定
@@ -395,7 +398,7 @@ class KomaDroidCameraManager(
                         set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
                         set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
                     }
-                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList) ?: return@collectLatest
+                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList, { it.sessionParameters = backCameraCaptureRequest.build() }) ?: return@collectLatest
                     backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
 
                     _isVideoRecordingFlow.value = true
@@ -594,7 +597,8 @@ class KomaDroidCameraManager(
      * @param outputSurfaceList 出力先[Surface]
      */
     private suspend fun CameraDevice.awaitCameraSessionConfiguration(
-        outputSurfaceList: List<Surface>
+        outputSurfaceList: List<Surface>,
+        prepare: ((SessionConfiguration) -> Unit)? = null
     ) = suspendCancellableCoroutine { continuation ->
         // OutputConfiguration を作る
         val outputConfigurationList = outputSurfaceList.map { surface -> OutputConfiguration(surface) }
@@ -607,6 +611,7 @@ class KomaDroidCameraManager(
                 continuation.resume(null)
             }
         })
+        prepare?.invoke(sessionConfiguration)
         createCaptureSession(sessionConfiguration)
     }
 

@@ -93,7 +93,7 @@ fun CameraScreen() {
             LaunchedEffect(key1 = currentScreenRotateType.value) {
                 (context as? Activity)?.requestedOrientation = when (currentScreenRotateType.value) {
                     ScreenRotateType.BlockRotationRequest -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
-                    ScreenRotateType.UnLockScreenRotation -> ActivityInfo.SCREEN_ORIENTATION_USER
+                    ScreenRotateType.UnLockScreenRotation -> ActivityInfo.SCREEN_ORIENTATION_SENSOR // 端末設定よりもセンサーを優先する
                     ScreenRotateType.LockScreenRotation -> if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 }
             }
