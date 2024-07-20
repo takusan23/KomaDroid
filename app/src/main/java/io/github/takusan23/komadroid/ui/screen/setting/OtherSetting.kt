@@ -6,6 +6,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import io.github.takusan23.komadroid.ui.components.ClickSettingItem
 
+// TODO この辺のリンクを完成させていく
+
 @Composable
 fun OtherSetting() {
     val context = LocalContext.current

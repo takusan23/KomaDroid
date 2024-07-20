@@ -1,19 +1,29 @@
 package io.github.takusan23.komadroid.ui.screen
 
+import android.content.Context
+import android.hardware.camera2.CameraManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.takusan23.komadroid.PermissionTool
 
 /** 権限くださいダイアログ */
@@ -41,11 +51,50 @@ fun PermissionScreen(onGranted: () -> Unit) {
             verticalArrangement = Arrangement.Center
         ) {
 
-            Text(text = "権限ください")
+            Text(text = "権限を付与してください。カメラは撮影目的に、マイクは動画撮影の録音のために使います。")
 
             Button(onClick = {
                 permissionRequest.launch(PermissionTool.REQUIRED_PERMISSION_LIST)
             }) { Text(text = "権限を付与") }
+
+            MultiCameraOpenSupportInfo(
+                modifier = Modifier
+                    .padding(top = 50.dp)
+                    .padding(10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MultiCameraOpenSupportInfo(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val concurrentCameraIdList = remember { mutableStateOf<List<Set<String>>>(emptyList()) }
+
+    LaunchedEffect(key1 = Unit) {
+        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        // concurrentCameraIds 、Xiaomi Mi 11 Lite 5G だと同時に利用できるのにかかわらず空の配列を返してて信用できない
+        concurrentCameraIdList.value = cameraManager.concurrentCameraIds.toList()
+    }
+
+    OutlinedCard(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+
+            Text(
+                text = if (concurrentCameraIdList.value.isNotEmpty()) "アプリは動作します" else "アプリは動作するかもしれません",
+                fontSize = 20.sp
+            )
+
+            Text(
+                text = if (concurrentCameraIdList.value.isNotEmpty()) "前面、背面カメラを同時に起動できます。" else "OS アップデートではなく、購入した時点で Android 11 以降を搭載した Android 端末の場合は動くかもしれません。"
+            )
+
+            Text(text = "CameraManager#getConcurrentCameraIds() = ${concurrentCameraIdList.value}")
         }
     }
 }
