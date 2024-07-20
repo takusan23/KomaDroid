@@ -43,7 +43,8 @@ fun CameraControlOverlay(
     isMoveEnable: Boolean,
     onMoveEnable: (Boolean) -> Unit,
     onScreenRotationClick: () -> Unit,
-    onZoomChange: (KomaDroidCameraManager.CameraZoomData) -> Unit
+    onZoomChange: (KomaDroidCameraManager.CameraZoomData) -> Unit,
+    isVideoRecording: Boolean
 ) {
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -67,6 +68,7 @@ fun CameraControlOverlay(
                 onScreenRotationClick = onScreenRotationClick,
                 zoomData = zoomData,
                 onZoomChange = onZoomChange,
+                isVideoRecording = isVideoRecording
             )
         } else {
             Portrait(
@@ -82,6 +84,7 @@ fun CameraControlOverlay(
                 onScreenRotationClick = onScreenRotationClick,
                 zoomData = zoomData,
                 onZoomChange = onZoomChange,
+                isVideoRecording = isVideoRecording
             )
         }
     }
@@ -100,7 +103,8 @@ private fun Portrait(
     isMoveEnable: Boolean,
     onMoveEnable: (Boolean) -> Unit,
     onScreenRotationClick: () -> Unit,
-    onZoomChange: (KomaDroidCameraManager.CameraZoomData) -> Unit
+    onZoomChange: (KomaDroidCameraManager.CameraZoomData) -> Unit,
+    isVideoRecording: Boolean
 ) {
     // ズームを開くか。null で開かない
     val openZoomSliderOrNull = remember { mutableStateOf<OpenZoomSliderState?>(null) }
@@ -162,21 +166,28 @@ private fun Portrait(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+
             Box(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                CaptureModeSwitch(
-                    currentCaptureMode = currentCaptureMode,
-                    onChange = onCaptureModeChange
-                )
+                // 録画中は塞ぐ
+                if (!isVideoRecording) {
+                    CaptureModeSwitch(
+                        currentCaptureMode = currentCaptureMode,
+                        onChange = onCaptureModeChange
+                    )
+                }
             }
 
             Box(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                ShutterButton(onClick = onShutterClick)
+                ShutterButton(
+                    onClick = onShutterClick,
+                    isVideoRecording = isVideoRecording
+                )
             }
 
             Row(
@@ -184,12 +195,15 @@ private fun Portrait(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
-                ScreenRotationLockButton(
-                    screenRotateType = screenRotateType,
-                    onClick = onScreenRotationClick
-                )
+                // 録画中は塞ぐ
+                if (!isVideoRecording) {
+                    ScreenRotationLockButton(
+                        screenRotateType = screenRotateType,
+                        onClick = onScreenRotationClick
+                    )
 
-                SettingButton(onClick = onSettingButton)
+                    SettingButton(onClick = onSettingButton)
+                }
             }
         }
     }
@@ -208,7 +222,8 @@ private fun Landscape(
     isMoveEnable: Boolean,
     onMoveEnable: (Boolean) -> Unit,
     onScreenRotationClick: () -> Unit,
-    onZoomChange: (KomaDroidCameraManager.CameraZoomData) -> Unit
+    onZoomChange: (KomaDroidCameraManager.CameraZoomData) -> Unit,
+    isVideoRecording: Boolean
 ) {
     // ズームを開くか。null で開かない
     val openZoomSliderOrNull = remember { mutableStateOf<OpenZoomSliderState?>(null) }
@@ -277,19 +292,25 @@ private fun Landscape(
                 verticalArrangement = Arrangement.SpaceAround,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                SettingButton(onClick = onSettingButton)
+                // 録画中は塞ぐ
+                if (!isVideoRecording) {
+                    SettingButton(onClick = onSettingButton)
 
-                ScreenRotationLockButton(
-                    screenRotateType = screenRotateType,
-                    onClick = onScreenRotationClick
-                )
+                    ScreenRotationLockButton(
+                        screenRotateType = screenRotateType,
+                        onClick = onScreenRotationClick
+                    )
+                }
             }
 
             Box(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                ShutterButton(onClick = onShutterClick)
+                ShutterButton(
+                    onClick = onShutterClick,
+                    isVideoRecording = isVideoRecording
+                )
             }
 
             Box(
@@ -297,11 +318,15 @@ private fun Landscape(
                 contentAlignment = Alignment.Center
             ) {
                 // TODO 横のやつを回転させて暫定対応、切り替えボタン自前で作ったほうがいいかも
-                CaptureModeSwitch(
-                    modifier = Modifier.graphicsLayer { rotationZ = 270f },
-                    currentCaptureMode = currentCaptureMode,
-                    onChange = onCaptureModeChange
-                )
+
+                // 録画中は塞ぐ
+                if (!isVideoRecording) {
+                    CaptureModeSwitch(
+                        modifier = Modifier.graphicsLayer { rotationZ = 270f },
+                        currentCaptureMode = currentCaptureMode,
+                        onChange = onCaptureModeChange
+                    )
+                }
             }
         }
     }

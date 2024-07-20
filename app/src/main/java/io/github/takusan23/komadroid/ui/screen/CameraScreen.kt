@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,7 +52,7 @@ fun CameraScreen() {
     val scope = rememberCoroutineScope()
 
     val isLandScape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val captureMode = remember { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
+    val captureMode = rememberSaveable { mutableStateOf(KomaDroidCameraManager.CaptureMode.PICTURE) }
 
     // カメラと描画、録画を司るクラス
     // remember { } だと suspend fun 呼べないので produceState
@@ -82,9 +83,9 @@ fun CameraScreen() {
 
             val zoomData = cameraManager.cameraZoomDataFlow.collectAsState()
             val cameraSettingData = cameraManager.settingDataFlow.collectAsState(initial = null)
+            val isVideoRecording = cameraManager.isVideoRecordingFlow.collectAsState()
 
             val isMoveEnable = remember { mutableStateOf(false) }
-            val isVideoRecording = remember(captureMode.value) { mutableStateOf(false) }
             val currentScreenRotateType = remember { mutableStateOf(ScreenRotateType.UnLockScreenRotation) }
             val isSettingOpen = remember { mutableStateOf(false) }
 
@@ -113,13 +114,9 @@ fun CameraScreen() {
                     modifier = Modifier
                         .align(Alignment.Center)
                         .aspectRatio(
-                            ratio = cameraSettingData.value?.let { settingData ->
-                                if (isLandScape) {
-                                    settingData.highestResolution.landscape.let { size -> size.height / size.width.toFloat() }
-                                } else {
-                                    settingData.highestResolution.portrait.let { size -> size.width / size.height.toFloat() }
-                                }
-                            } ?: 1f
+                            ratio = cameraSettingData.value
+                                ?.let { if (isLandScape) it.highestResolution.landscape else it.highestResolution.portrait }
+                                ?.let { size -> size.width / size.height.toFloat() } ?: 1f
                         )
                         .pointerInput(isMoveEnable.value) {
                             if (isMoveEnable.value) {
@@ -160,13 +157,11 @@ fun CameraScreen() {
                     } else {
                         if (isVideoRecording.value) {
                             cameraManager.stopRecordVideo()
+                            currentScreenRotateType.value = ScreenRotateType.UnLockScreenRotation
                         } else {
                             cameraManager.startRecordVideo()
+                            currentScreenRotateType.value = ScreenRotateType.BlockRotationRequest // 録画中は回転しないように
                         }
-                        // TODO CameraManager 側にフラグを移動
-                        isVideoRecording.value = !isVideoRecording.value
-                        // 録画中は回転しないように
-                        currentScreenRotateType.value = if (isVideoRecording.value) ScreenRotateType.BlockRotationRequest else ScreenRotateType.UnLockScreenRotation
                     }
                 },
                 onFlipClick = { cameraManager.isFlip = !cameraManager.isFlip },
@@ -189,7 +184,8 @@ fun CameraScreen() {
                     ).show()
                 },
                 zoomData = zoomData.value,
-                onZoomChange = { cameraManager.updateZoomData(it) }
+                onZoomChange = { cameraManager.updateZoomData(it) },
+                isVideoRecording = isVideoRecording.value
             )
         }
     }

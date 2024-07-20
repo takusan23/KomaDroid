@@ -14,13 +14,17 @@ private val ShutterButtonSize = 100.dp
 @Composable
 fun ShutterButton(
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isVideoRecording: Boolean
 ) {
     Surface(
         modifier = modifier.size(ShutterButtonSize),
         onClick = onClick,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        border = BorderStroke(10.dp, MaterialTheme.colorScheme.primary)
+        color = if (isVideoRecording) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+        border = BorderStroke(
+            width = 10.dp,
+            color = if (isVideoRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        )
     ) { /* do nothing */ }
 }

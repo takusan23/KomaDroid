@@ -29,11 +29,11 @@ data class CameraSettingData(
 
         /** 横画面用 */
         val landscape: Size
-            get() = Size(width, height)
+            get() = Size(width = width, height = height)
 
         /** 縦画面用 */
         val portrait: Size
-            get() = Size(height, width)
+            get() = Size(width = height, height = width)
 
         companion object {
             fun resolve(key: String) = entries.first { it.key == key }

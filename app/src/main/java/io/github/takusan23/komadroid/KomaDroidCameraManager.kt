@@ -79,6 +79,7 @@ class KomaDroidCameraManager(
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private val isLandScape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     private val _cameraZoomDataFlow = MutableStateFlow(getCameraZoomSpecification())
+    private val _isVideoRecordingFlow = MutableStateFlow(false)
 
     /** 今のタスク（動画撮影）キャンセル用 */
     private var currentJob: Job? = null
@@ -169,6 +170,9 @@ class KomaDroidCameraManager(
 
     /** カメラのズーム状態 */
     val cameraZoomDataFlow = _cameraZoomDataFlow.asStateFlow()
+
+    /** 動画撮影中かどうか */
+    val isVideoRecordingFlow = _isVideoRecordingFlow.asStateFlow()
 
     /** DataStore から設定を読み出して [CameraSettingData] を作る */
     val settingDataFlow = context.dataStore.data.map {
@@ -346,7 +350,7 @@ class KomaDroidCameraManager(
 
                 // 撮影したらプレビューに戻す
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "撮影しました", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "保存しました", Toast.LENGTH_SHORT).show()
                 }
                 startPreview()
             }
@@ -394,6 +398,8 @@ class KomaDroidCameraManager(
                     val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList) ?: return@collectLatest
                     backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
 
+                    _isVideoRecordingFlow.value = true
+                    // 両方の映像が来るまで録画を開始しない
                     // 録画開始
                     mediaRecorder?.start()
                     try {
@@ -426,6 +432,7 @@ class KomaDroidCameraManager(
                         withContext(NonCancellable) {
                             mediaRecorder?.stop()
                             mediaRecorder?.release()
+
                             // 動画ファイルを動画フォルダへコピーさせ、ファイルを消す
                             withContext(Dispatchers.IO) {
                                 val contentResolver = context.contentResolver
@@ -441,9 +448,16 @@ class KomaDroidCameraManager(
                                 }
                                 saveVideoFile!!.delete()
                             }
+
                             // MediaRecorder は stop したら使えないので、MediaRecorder を作り直してからプレビューに戻す
                             initVideoMode(cameraSettingData = settingDataFlow.filterNotNull().first())
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "保存しました", Toast.LENGTH_SHORT).show()
+                            }
                             startPreview()
+
+                            // 全部終わってからフラグを落とす
+                            _isVideoRecordingFlow.value = false
                         }
                     }
                 }
@@ -584,7 +598,7 @@ class KomaDroidCameraManager(
     ) = suspendCancellableCoroutine { continuation ->
         // OutputConfiguration を作る
         val outputConfigurationList = outputSurfaceList.map { surface -> OutputConfiguration(surface) }
-        val backCameraSessionConfiguration = SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputConfigurationList, cameraExecutor, object : CameraCaptureSession.StateCallback() {
+        val sessionConfiguration = SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputConfigurationList, cameraExecutor, object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(captureSession: CameraCaptureSession) {
                 continuation.resume(captureSession)
             }
@@ -593,7 +607,7 @@ class KomaDroidCameraManager(
                 continuation.resume(null)
             }
         })
-        createCaptureSession(backCameraSessionConfiguration)
+        createCaptureSession(sessionConfiguration)
     }
 
     /** [ImageReader]から写真を取り出して、端末のギャラリーに登録する拡張関数。 */
@@ -648,7 +662,7 @@ class KomaDroidCameraManager(
                 .mapNotNull { it.currentBackCameraZoom }
                 .distinctUntilChanged()
                 .collect { newZoom ->
-                    backCameraCaptureRequest.setZoomLevel(newZoom)
+                    backCameraCaptureRequest.set(CaptureRequest.CONTROL_ZOOM_RATIO, newZoom)
                     backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
                 }
         }
@@ -657,15 +671,10 @@ class KomaDroidCameraManager(
                 .mapNotNull { it.currentFrontCameraZoom }
                 .distinctUntilChanged()
                 .collect { newZoom ->
-                    frontCameraCaptureRequest.setZoomLevel(newZoom)
+                    frontCameraCaptureRequest.set(CaptureRequest.CONTROL_ZOOM_RATIO, newZoom)
                     frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
                 }
         }
-    }
-
-    /** [CaptureRequest]にズームの値をいれる */
-    private fun CaptureRequest.Builder.setZoomLevel(zoomLevel: Float) {
-        set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomLevel)
     }
 
     /**
