@@ -1,0 +1,256 @@
+{
+  "version": 1,
+  "layers": {
+    "vectorLayer": {
+      "id": "437",
+      "name": "vector",
+      "type": "vector",
+      "canvasColor": "#000000",
+      "width": 899,
+      "height": 899,
+      "children": [
+        {
+          "id": "435",
+          "name": "group_3",
+          "type": "group",
+          "children": [
+            {
+              "id": "434",
+              "name": "wrapper",
+              "type": "group",
+              "children": [
+                {
+                  "id": "433",
+                  "name": "presentation_clip_path",
+                  "type": "mask",
+                  "pathData": "M 0 0 L 899 0 L 899 899 L 0 899 Z"
+                },
+                {
+                  "id": "424",
+                  "name": "group_2",
+                  "type": "group",
+                  "children": [
+                    {
+                      "id": "423",
+                      "name": "group_1",
+                      "type": "group",
+                      "children": [
+                        {
+                          "id": "422",
+                          "name": "group",
+                          "type": "group",
+                          "children": [
+                            {
+                              "id": "55",
+                              "name": "path",
+                              "type": "path",
+                              "pathData": "M 387 301 C 384 301 382 305 381 308 L 368 358 L 283 364 C 273 365 265 372 265 383 L 265 578 C 265 588 273 597 283 597 L 615 597 C 625 597 633 588 633 578 L 633 383 C 633 372 625 365 615 364 L 525 358 L 512 308 C 511 305 509 301 505 301 L 387 301 Z",
+                              "strokeColor": "#ffffff",
+                              "strokeWidth": 20
+                            },
+                            {
+                              "id": "89",
+                              "name": "path_1",
+                              "type": "path",
+                              "pathData": "M 306 309 L 278 281 M 286 329 L 247 319 M 326 289 L 315 250",
+                              "strokeColor": "#ffffff",
+                              "strokeAlpha": 0,
+                              "strokeWidth": 20,
+                              "strokeLinecap": "round",
+                              "strokeLinejoin": "round"
+                            },
+                            {
+                              "id": "450",
+                              "name": "cat",
+                              "type": "group",
+                              "children": [
+                                {
+                                  "id": "117",
+                                  "name": "path_2",
+                                  "type": "path",
+                                  "pathData": "M 577 524 L 475 524 C 461 516 451 502 450 488 C 449 475 461 461 465 453 M 577 524 C 592 516 602 502 603 488 C 604 475 591 461 587 453",
+                                  "strokeColor": "#ffffff",
+                                  "strokeAlpha": 0,
+                                  "strokeWidth": 20,
+                                  "strokeLinecap": "round"
+                                },
+                                {
+                                  "id": "157",
+                                  "name": "path_3",
+                                  "type": "path",
+                                  "pathData": "M 465 453 L 465 422 L 495 438 M 587 453 L 587 422 L 557 438 M 495 438 C 505 436 515 434 526 434 C 537 434 548 436 557 438",
+                                  "strokeColor": "#ffffff",
+                                  "strokeAlpha": 0,
+                                  "strokeWidth": 21,
+                                  "strokeLinecap": "round"
+                                },
+                                {
+                                  "id": "224",
+                                  "name": "path_4",
+                                  "type": "path",
+                                  "pathData": "M 514 474 C 514 476 513 478 512 479 C 511 481 510 482 508 483 C 506 484 504 485 502 485 C 500 485 498 484 496 483 C 495 482 493 481 492 479 C 491 478 491 476 491 474 C 491 472 491 470 492 468 C 493 466 495 465 496 464 C 498 463 500 462 502 462 C 504 462 506 463 508 464 C 510 465 511 466 512 468 C 513 470 514 472 514 474 Z M 562 474 C 562 476 561 478 560 479 C 559 481 558 482 556 483 C 554 484 552 485 550 485 C 548 485 546 484 545 483 C 543 482 541 481 540 479 C 539 478 539 476 539 474 C 539 472 539 470 540 468 C 541 466 543 465 545 464 C 546 463 548 462 550 462 C 552 462 554 463 556 464 C 558 465 559 466 560 468 C 561 470 562 472 562 474 Z",
+                                  "fillColor": "#ffffff",
+                                  "fillAlpha": 0,
+                                  "strokeWidth": 1
+                                }
+                              ]
+                            },
+                            {
+                              "id": "452",
+                              "name": "face",
+                              "type": "group",
+                              "children": [
+                                {
+                                  "id": "258",
+                                  "name": "path_5",
+                                  "type": "path",
+                                  "pathData": "M 417 476 C 417 487 414 497 409 506 C 403 516 396 523 386 529 C 377 534 367 537 356 537 C 345 537 335 534 325 529 C 316 523 308 516 303 506 C 298 497 295 487 295 476 C 295 465 298 455 303 445 C 308 436 316 428 325 423 C 335 417 345 415 356 415 C 367 415 377 417 386 423 C 396 428 403 436 409 445 C 414 455 417 465 417 476 Z",
+                                  "strokeColor": "#ffffff",
+                                  "strokeAlpha": 0,
+                                  "strokeWidth": 20
+                                },
+                                {
+                                  "id": "270",
+                                  "name": "path_6",
+                                  "type": "path",
+                                  "pathData": "M 376 502 L 356 511 L 336 502",
+                                  "strokeColor": "#ffffff",
+                                  "strokeAlpha": 0,
+                                  "strokeWidth": 20,
+                                  "strokeLinecap": "round",
+                                  "strokeLinejoin": "round"
+                                },
+                                {
+                                  "id": "337",
+                                  "name": "path_7",
+                                  "type": "path",
+                                  "pathData": "M 343 463 C 343 465 343 467 342 468 C 341 470 339 471 337 472 C 336 474 334 474 332 474 C 330 474 328 474 326 472 C 324 471 323 470 322 468 C 321 467 320 465 320 463 C 320 461 321 459 322 457 C 323 455 324 454 326 453 C 328 452 330 451 332 451 C 334 451 336 452 337 453 C 339 454 341 455 342 457 C 343 459 343 461 343 463 Z M 391 463 C 391 465 391 467 390 468 C 389 470 388 471 386 472 C 384 474 382 474 380 474 C 378 474 376 474 374 472 C 373 471 371 470 370 468 C 369 467 369 465 369 463 C 369 461 369 459 370 457 C 371 455 373 454 374 453 C 376 452 378 451 380 451 C 382 451 384 452 386 453 C 388 454 389 455 390 457 C 391 459 391 461 391 463 Z",
+                                  "fillColor": "#ffffff",
+                                  "fillAlpha": 0,
+                                  "strokeWidth": 1
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "hiddenLayerIds": []
+  },
+  "timeline": {
+    "animation": {
+      "id": "2",
+      "name": "anim",
+      "duration": 500,
+      "blocks": [
+        {
+          "id": "442",
+          "layerId": "117",
+          "propertyName": "strokeAlpha",
+          "startTime": 300,
+          "endTime": 400,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": 0,
+          "toValue": 1
+        },
+        {
+          "id": "443",
+          "layerId": "157",
+          "propertyName": "strokeAlpha",
+          "startTime": 300,
+          "endTime": 400,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": 0,
+          "toValue": 1
+        },
+        {
+          "id": "444",
+          "layerId": "224",
+          "propertyName": "fillAlpha",
+          "startTime": 300,
+          "endTime": 400,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": 0,
+          "toValue": 1
+        },
+        {
+          "id": "445",
+          "layerId": "258",
+          "propertyName": "strokeAlpha",
+          "startTime": 200,
+          "endTime": 300,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": 0,
+          "toValue": 1
+        },
+        {
+          "id": "446",
+          "layerId": "270",
+          "propertyName": "strokeAlpha",
+          "startTime": 200,
+          "endTime": 300,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": 0,
+          "toValue": 1
+        },
+        {
+          "id": "448",
+          "layerId": "337",
+          "propertyName": "fillAlpha",
+          "startTime": 200,
+          "endTime": 300,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": 0,
+          "toValue": 1
+        },
+        {
+          "id": "449",
+          "layerId": "89",
+          "propertyName": "strokeAlpha",
+          "startTime": 400,
+          "endTime": 500,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": 0,
+          "toValue": 1
+        },
+        {
+          "id": "451",
+          "layerId": "450",
+          "propertyName": "translateX",
+          "startTime": 300,
+          "endTime": 400,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": 200,
+          "toValue": 0
+        },
+        {
+          "id": "453",
+          "layerId": "452",
+          "propertyName": "translateX",
+          "startTime": 200,
+          "endTime": 300,
+          "interpolator": "FAST_OUT_SLOW_IN",
+          "type": "number",
+          "fromValue": -200,
+          "toValue": 0
+        }
+      ]
+    }
+  }
+}
