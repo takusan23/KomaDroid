@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.takusan23.komadroid.PermissionTool
+import io.github.takusan23.komadroid.ui.screen.setting.LicenseScreen
 
 enum class MainScreenNavigation(val path: String) {
     PermissionScreen("permission"),
