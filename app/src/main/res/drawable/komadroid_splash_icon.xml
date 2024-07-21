@@ -1,0 +1,124 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="8.99dp"
+    android:height="8.99dp"
+    android:viewportWidth="899"
+    android:viewportHeight="899">
+  <group>
+    <clip-path
+        android:pathData="M0,0h899v899h-899z"/>
+    <path
+        android:pathData="M387,301C384,301 382,305 381,308L368,358 368,358 283,364C273,365 265,372 265,383L265,578C265,588 273,597 283,597L615,597C625,597 633,588 633,578L633,383C633,372 625,365 615,364L525,358 525,358 512,308C511,305 509,301 505,301L388,301 387,301Z"
+        android:strokeLineJoin="round"
+        android:strokeWidth="20"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"/>
+    <path
+        android:pathData="M306,309L278,281"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="20"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M286,329L247,319"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="20"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M326,289L315,250"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="20"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M577,524L475,524C461,516 451,502 450,488 449,475 461,461 465,453"
+        android:strokeLineJoin="round"
+        android:strokeWidth="20"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M577,524C592,516 602,502 603,488 604,475 591,461 587,453"
+        android:strokeLineJoin="round"
+        android:strokeWidth="20"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M465,453L465,422 495,438"
+        android:strokeLineJoin="round"
+        android:strokeWidth="21"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M587,453L587,422 557,438"
+        android:strokeLineJoin="round"
+        android:strokeWidth="21"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M495,438C505,436 515,434 526,434 537,434 548,436 557,438"
+        android:strokeLineJoin="round"
+        android:strokeWidth="21"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M514,474C514,476 513,478 512,479 511,481 510,482 508,483 506,484 504,485 502,485 500,485 498,484 496,483 495,482 493,481 492,479 491,478 491,476 491,474 491,472 491,470 492,468 493,466 495,465 496,464 498,463 500,462 502,462 504,462 506,463 508,464 510,465 511,466 512,468 513,470 514,472 514,474L514,474Z"
+        android:strokeLineJoin="round"
+        android:strokeWidth="28.222"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#00000000"
+        android:fillType="evenOdd"/>
+    <path
+        android:pathData="M562,474C562,476 561,478 560,479 559,481 558,482 556,483 554,484 552,485 550,485 548,485 546,484 545,483 543,482 541,481 540,479 539,478 539,476 539,474 539,472 539,470 540,468 541,466 543,465 545,464 546,463 548,462 550,462 552,462 554,463 556,464 558,465 559,466 560,468 561,470 562,472 562,474L562,474Z"
+        android:strokeLineJoin="round"
+        android:strokeWidth="28.222"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#00000000"
+        android:fillType="evenOdd"/>
+    <path
+        android:pathData="M417,476C417,487 414,497 409,506 403,516 396,523 386,529 377,534 367,537 356,537 345,537 335,534 325,529 316,523 308,516 303,506 298,497 295,487 295,476 295,465 298,455 303,445 308,436 316,428 325,423 335,417 345,415 356,415 367,415 377,417 386,423 396,428 403,436 409,445 414,455 417,465 417,476L417,476Z"
+        android:strokeLineJoin="round"
+        android:strokeWidth="20"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"/>
+    <path
+        android:pathData="M376,502L356,511 336,502"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="20"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M343,463C343,465 343,467 342,468 341,470 339,471 337,472 336,474 334,474 332,474 330,474 328,474 326,472 324,471 323,470 322,468 321,467 320,465 320,463 320,461 321,459 322,457 323,455 324,454 326,453 328,452 330,451 332,451 334,451 336,452 337,453 339,454 341,455 342,457 343,459 343,461 343,463L343,463Z"
+        android:strokeLineJoin="round"
+        android:strokeWidth="28.222"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#00000000"
+        android:fillType="evenOdd"/>
+    <path
+        android:pathData="M391,463C391,465 391,467 390,468 389,470 388,471 386,472 384,474 382,474 380,474 378,474 376,474 374,472 373,471 371,470 370,468 369,467 369,465 369,463 369,461 369,459 370,457 371,455 373,454 374,453 376,452 378,451 380,451 382,451 384,452 386,453 388,454 389,455 390,457 391,459 391,461 391,463L391,463Z"
+        android:strokeLineJoin="round"
+        android:strokeWidth="28.222"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#00000000"
+        android:fillType="evenOdd"/>
+  </group>
+</vector>

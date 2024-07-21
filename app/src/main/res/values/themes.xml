@@ -2,4 +2,16 @@
 <resources>
 
     <style name="Theme.KomaDroid" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- スプラッシュスクリーン用テーマ -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- 背景色 -->
+        <item name="windowSplashScreenBackground">#4A5C92</item>
+        <!-- アイコン -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/komadroid_splash_icon</item>
+        <!-- アニメーションの時間 -->
+        <item name="windowSplashScreenAnimationDuration">500</item>
+        <!-- スプラッシュスクリーンが終わった後のテーマ -->
+        <item name="postSplashScreenTheme">@style/Theme.KomaDroid</item>
+    </style>
 </resources>
