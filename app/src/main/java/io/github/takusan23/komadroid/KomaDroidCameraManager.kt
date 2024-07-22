@@ -31,6 +31,7 @@ import io.github.takusan23.komadroid.akaricore5.AkariGraphicsTextureRenderer
 import io.github.takusan23.komadroid.tool.CameraSettingData
 import io.github.takusan23.komadroid.tool.DataStoreTool
 import io.github.takusan23.komadroid.tool.dataStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -130,7 +131,7 @@ class KomaDroidCameraManager(
     /** 前面カメラ */
     private val frontCameraFlow = lifecycle.currentStateFlow.transformLatest { current ->
         // onResume のときだけ
-        if (current.isAtLeast(Lifecycle.State.RESUMED)) {
+        if (current == Lifecycle.State.RESUMED) {
             openCameraFlow(getFrontCameraId()).collect { camera -> emit(camera) }
         } else {
             emit(null)
@@ -143,7 +144,7 @@ class KomaDroidCameraManager(
 
     /** 背面カメラ */
     private val backCameraFlow = lifecycle.currentStateFlow.transformLatest { current ->
-        if (current.isAtLeast(Lifecycle.State.RESUMED)) {
+        if (current == Lifecycle.State.RESUMED) {
             openCameraFlow(getBackCameraId()).collect { camera -> emit(camera) }
         } else {
             emit(null)
@@ -234,6 +235,8 @@ class KomaDroidCameraManager(
                                     backTexture = previewBackCameraAkariSurfaceTexture!!
                                 )
                             }
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: RuntimeException) {
                             // java.lang.RuntimeException: glBindFramebuffer: glError 1285
                             // Google Tensor だけ静止画撮影・動画撮影切り替え時に頻繁に落ちる
