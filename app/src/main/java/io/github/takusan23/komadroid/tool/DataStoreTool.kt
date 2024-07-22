@@ -16,7 +16,6 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "se
 
 object DataStoreTool {
 
-    // TODO 極端に低いビットレートは回避する旨を表示する
     // 配信サイトの推奨エンコード設定に従う
     private const val MIN_BITRATE_AVC_HD = 6_000_000
     private const val MIN_BITRATE_AVC_FHD = 12_000_000
@@ -46,20 +45,25 @@ object DataStoreTool {
 
     suspend fun writeData(context: Context, settingData: CameraSettingData) = withContext(Dispatchers.IO) {
 
-        // 極端に低いビットレートは回避する
-        val fixBitrate = when (settingData.videoCodec) {
-            CameraSettingData.VideoCodec.AVC -> when (settingData.highestResolution) {
-                CameraSettingData.Resolution.RESOLUTION_720P -> MIN_BITRATE_AVC_HD
-                CameraSettingData.Resolution.RESOLUTION_1080P -> MIN_BITRATE_AVC_FHD
-                CameraSettingData.Resolution.RESOLUTION_2160P -> MIN_BITRATE_AVC_UHD
-            }
+        // 解像度、コーデックが変化したらビットレートを推奨値にリセット
+        val currentData = readData(context)
+        val fixBitrate = if (currentData.highestResolution != settingData.highestResolution || currentData.videoCodec != settingData.videoCodec) {
+            when (settingData.videoCodec) {
+                CameraSettingData.VideoCodec.AVC -> when (settingData.highestResolution) {
+                    CameraSettingData.Resolution.RESOLUTION_720P -> MIN_BITRATE_AVC_HD
+                    CameraSettingData.Resolution.RESOLUTION_1080P -> MIN_BITRATE_AVC_FHD
+                    CameraSettingData.Resolution.RESOLUTION_2160P -> MIN_BITRATE_AVC_UHD
+                }
 
-            CameraSettingData.VideoCodec.HEVC -> when (settingData.highestResolution) {
-                CameraSettingData.Resolution.RESOLUTION_720P -> MIN_BITRATE_HEVC_HD
-                CameraSettingData.Resolution.RESOLUTION_1080P -> MIN_BITRATE_HEVC_FHD
-                CameraSettingData.Resolution.RESOLUTION_2160P -> MIN_BITRATE_HEVC_UHD
+                CameraSettingData.VideoCodec.HEVC -> when (settingData.highestResolution) {
+                    CameraSettingData.Resolution.RESOLUTION_720P -> MIN_BITRATE_HEVC_HD
+                    CameraSettingData.Resolution.RESOLUTION_1080P -> MIN_BITRATE_HEVC_FHD
+                    CameraSettingData.Resolution.RESOLUTION_2160P -> MIN_BITRATE_HEVC_UHD
+                }
             }
-        }.coerceAtLeast(settingData.videoBitrate)
+        } else {
+            settingData.videoBitrate
+        }
 
         context.dataStore.edit { settings ->
             settings[KEY_FRONT_CAMERA_RESOLUTION] = settingData.frontCameraResolution.key

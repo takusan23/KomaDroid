@@ -22,6 +22,14 @@ fun VideoSetting(
 ) {
     Column {
 
+        DropdownSettingItem(
+            title = "動画コーデック",
+            description = "HEVC を利用すると、互換性を犠牲に容量が半分になると言われています。",
+            selectIndex = settingData.videoCodec.ordinal,
+            menu = remember { CameraSettingData.VideoCodec.entries.map { it.name } },
+            onSelect = { onUpdate(settingData.copy(videoCodec = CameraSettingData.VideoCodec.entries[it])) }
+        )
+
         IntValueSettingItem(
             title = "ビットレート",
             description = "1秒間に利用するデータ量です",
