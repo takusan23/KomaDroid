@@ -1,5 +1,6 @@
 package io.github.takusan23.komadroid.ui.theme
 
+import android.app.Activity
 import android.os.Build
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -8,8 +9,10 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.view.WindowInsetsControllerCompat
 
 // Material Theme Builder
 // https://material-foundation.github.io/material-theme-builder/
@@ -272,6 +275,18 @@ fun KomaDroidTheme(
         darkTheme -> darkScheme
         else -> lightScheme
     }
+
+    // システムバーを白色に
+    val context = LocalContext.current
+    LaunchedEffect(key1 = Unit) {
+        if (context is Activity) {
+            WindowInsetsControllerCompat(context.window, context.window.decorView).apply {
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+            }
+        }
+    }
+
 
     MaterialTheme(
         colorScheme = colorScheme,
