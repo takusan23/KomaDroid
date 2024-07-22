@@ -15,6 +15,18 @@ import kotlinx.coroutines.withContext
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 object DataStoreTool {
+
+    // TODO 極端に低いビットレートは回避する旨を表示する
+    // 配信サイトの推奨エンコード設定に従う
+    private const val MIN_BITRATE_AVC_HD = 6_000_000
+    private const val MIN_BITRATE_AVC_FHD = 12_000_000
+    private const val MIN_BITRATE_AVC_UHD = 35_000_000
+
+    // HEVC が使えるならその半分にする
+    private const val MIN_BITRATE_HEVC_HD = MIN_BITRATE_AVC_HD / 2
+    private const val MIN_BITRATE_HEVC_FHD = MIN_BITRATE_AVC_FHD / 2
+    private const val MIN_BITRATE_HEVC_UHD = MIN_BITRATE_AVC_UHD / 2
+
     private val KEY_FRONT_CAMERA_RESOLUTION = stringPreferencesKey("front_camera_resolution")
     private val KEY_BACK_CAMERA_RESOLUTION = stringPreferencesKey("back_camera_resolution")
     private val KEY_VIDEO_CODEC = stringPreferencesKey("video_codec")
@@ -33,11 +45,27 @@ object DataStoreTool {
     }
 
     suspend fun writeData(context: Context, settingData: CameraSettingData) = withContext(Dispatchers.IO) {
+
+        // 極端に低いビットレートは回避する
+        val fixBitrate = when (settingData.videoCodec) {
+            CameraSettingData.VideoCodec.AVC -> when (settingData.highestResolution) {
+                CameraSettingData.Resolution.RESOLUTION_720P -> MIN_BITRATE_AVC_HD
+                CameraSettingData.Resolution.RESOLUTION_1080P -> MIN_BITRATE_AVC_FHD
+                CameraSettingData.Resolution.RESOLUTION_2160P -> MIN_BITRATE_AVC_UHD
+            }
+
+            CameraSettingData.VideoCodec.HEVC -> when (settingData.highestResolution) {
+                CameraSettingData.Resolution.RESOLUTION_720P -> MIN_BITRATE_HEVC_HD
+                CameraSettingData.Resolution.RESOLUTION_1080P -> MIN_BITRATE_HEVC_FHD
+                CameraSettingData.Resolution.RESOLUTION_2160P -> MIN_BITRATE_HEVC_UHD
+            }
+        }.coerceAtLeast(settingData.videoBitrate)
+
         context.dataStore.edit { settings ->
             settings[KEY_FRONT_CAMERA_RESOLUTION] = settingData.frontCameraResolution.key
             settings[KEY_BACK_CAMERA_RESOLUTION] = settingData.backCameraResolution.key
             settings[KEY_VIDEO_CODEC] = settingData.videoCodec.key
-            settings[KEY_VIDEO_BITRATE] = settingData.videoBitrate
+            settings[KEY_VIDEO_BITRATE] = fixBitrate
             settings[KEY_CAMERA_FPS] = settingData.cameraFps.key
         }
     }

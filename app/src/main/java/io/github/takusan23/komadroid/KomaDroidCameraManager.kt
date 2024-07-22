@@ -699,15 +699,15 @@ class KomaDroidCameraManager(
             }
 
             override fun onDisconnected(camera: CameraDevice) {
+                trySend(null)
                 _cameraDevice = camera
                 camera.close()
-                trySend(null)
             }
 
             override fun onError(camera: CameraDevice, error: Int) {
+                trySend(null)
                 _cameraDevice = camera
                 camera.close()
-                trySend(null)
             }
         })
         awaitClose { _cameraDevice?.close() }

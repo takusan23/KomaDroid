@@ -59,7 +59,7 @@ data class CameraSettingData(
             frontCameraResolution = CameraSettingData.Resolution.RESOLUTION_1080P,
             backCameraResolution = CameraSettingData.Resolution.RESOLUTION_1080P,
             videoCodec = CameraSettingData.VideoCodec.AVC,
-            videoBitrate = 6_000_000,
+            videoBitrate = 12_000_000,
             cameraFps = Fps.FPS_30
         )
 
