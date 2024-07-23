@@ -22,9 +22,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.takusan23.komadroid.PermissionTool
+import io.github.takusan23.komadroid.R
 
 /** 権限くださいダイアログ */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,12 +88,12 @@ private fun MultiCameraOpenSupportInfo(modifier: Modifier = Modifier) {
         ) {
 
             Text(
-                text = if (concurrentCameraIdList.value.isNotEmpty()) "アプリは動作します" else "アプリは動作するかもしれません",
+                text = stringResource(id = if (concurrentCameraIdList.value.isNotEmpty()) R.string.screen_permission_support_ok else R.string.screen_permission_support_maybe),
                 fontSize = 20.sp
             )
 
             Text(
-                text = if (concurrentCameraIdList.value.isNotEmpty()) "前面、背面カメラを同時に起動できます。" else "OS アップデートではなく、購入した時点で Android 11 以降を搭載した Android 端末の場合は動くかもしれません。"
+                text = stringResource(id = if (concurrentCameraIdList.value.isNotEmpty()) R.string.screen_permission_support_description_ok else R.string.screen_permission_support_description_maybe)
             )
 
             Text(text = "CameraManager#getConcurrentCameraIds() = ${concurrentCameraIdList.value}")

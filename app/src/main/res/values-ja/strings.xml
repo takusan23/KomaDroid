@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">こまどろいど</string>
+    <string name="dialog_error_camera_open">カメラの準備に失敗しました。同時に前後カメラを利用する機能に対応していない端末の可能性があります。比較的最近の端末（Android 11 以降が初期搭載された端末）でお試しください。</string>
+    <string name="dialog_error_title">問題が発生しました</string>
+    <string name="dialog_error_unknown">不明なエラーが発生しました、アプリの再起動をお試しください。</string>
+    <string name="screen_permission_support_ok">アプリは動作します</string>
+    <string name="screen_permission_support_maybe">アプリは動作するかもしれません</string>
+    <string name="screen_permission_support_description_ok">前面、背面カメラを同時に起動できます。</string>
+    <string name="screen_permission_support_description_maybe">比較的最近の端末（Android 11 以降が初期搭載された端末）の場合は利用できる可能性が高いです。</string>
 </resources>

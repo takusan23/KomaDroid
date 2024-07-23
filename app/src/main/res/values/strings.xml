@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">KomaDroid</string>
+    <string name="dialog_error_camera_open">Failed to prepare the camera. The device may not support the function to use the front and rear cameras at the same time. Please try using a relatively recent device (a device with Android 11 or later pre-installed).</string>
+    <string name="dialog_error_title">There was a problem</string>
+    <string name="dialog_error_unknown">An unknown error occurred. Please try restarting the app.</string>
+    <string name="screen_permission_support_ok">The app works</string>
+    <string name="screen_permission_support_maybe">The app may work</string>
+    <string name="screen_permission_support_description_ok">You can activate the front and rear cameras at the same time.</string>
+    <string name="screen_permission_support_description_maybe">It is likely available on relatively recent devices (devices that come pre-installed with Android 11 or later).</string>
 </resources>
