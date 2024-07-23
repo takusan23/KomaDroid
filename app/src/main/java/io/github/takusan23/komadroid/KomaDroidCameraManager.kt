@@ -1,17 +1,15 @@
 package io.github.takusan23.komadroid
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
-import android.hardware.camera2.params.OutputConfiguration
-import android.hardware.camera2.params.SessionConfiguration
 import android.media.ImageReader
 import android.media.MediaRecorder
 import android.opengl.Matrix
@@ -28,9 +26,14 @@ import androidx.lifecycle.Lifecycle
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsProcessor
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsSurfaceTexture
 import io.github.takusan23.komadroid.akaricore5.AkariGraphicsTextureRenderer
+import io.github.takusan23.komadroid.tool.CameraDeviceState
 import io.github.takusan23.komadroid.tool.CameraSettingData
 import io.github.takusan23.komadroid.tool.DataStoreTool
+import io.github.takusan23.komadroid.tool.SessionConfigureFailedException
+import io.github.takusan23.komadroid.tool.awaitCameraSessionConfiguration
 import io.github.takusan23.komadroid.tool.dataStore
+import io.github.takusan23.komadroid.tool.openCameraFlow
+import io.github.takusan23.komadroid.ui.components.ErrorType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +44,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +52,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -56,11 +61,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.Executors
-import kotlin.coroutines.resume
 
 /** カメラを開いたり、プレビュー用の SurfaceView を作ったり、静止画撮影したりする */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -81,6 +84,7 @@ class KomaDroidCameraManager(
     private val isLandScape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     private val _cameraZoomDataFlow = MutableStateFlow(getCameraZoomSpecification())
     private val _isVideoRecordingFlow = MutableStateFlow(false)
+    private val _errorFlow = MutableStateFlow<ErrorType?>(null)
 
     /** 今のタスク（動画撮影）キャンセル用 */
     private var currentJob: Job? = null
@@ -129,10 +133,10 @@ class KomaDroidCameraManager(
     // カメラを開く、Flow なのはコールバックで通知されるので。また、ホットフローに変換して、一度だけ openCamera されるようにします（collect のたびに動かさない）
 
     /** 前面カメラ */
-    private val frontCameraFlow = lifecycle.currentStateFlow.transformLatest { current ->
+    private val frontCameraStateFlow = lifecycle.currentStateFlow.transformLatest { current ->
         // onResume のときだけ
         if (current == Lifecycle.State.RESUMED) {
-            openCameraFlow(getFrontCameraId()).collect { camera -> emit(camera) }
+            cameraManager.openCameraFlow(getFrontCameraId(), cameraExecutor).collect { camera -> emit(camera) }
         } else {
             emit(null)
         }
@@ -143,9 +147,9 @@ class KomaDroidCameraManager(
     )
 
     /** 背面カメラ */
-    private val backCameraFlow = lifecycle.currentStateFlow.transformLatest { current ->
+    private val backCameraStateFlow = lifecycle.currentStateFlow.transformLatest { current ->
         if (current == Lifecycle.State.RESUMED) {
-            openCameraFlow(getBackCameraId()).collect { camera -> emit(camera) }
+            cameraManager.openCameraFlow(getBackCameraId(), cameraExecutor).collect { camera -> emit(camera) }
         } else {
             emit(null)
         }
@@ -174,6 +178,9 @@ class KomaDroidCameraManager(
 
     /** 動画撮影中かどうか */
     val isVideoRecordingFlow = _isVideoRecordingFlow.asStateFlow()
+
+    /** エラー Flow */
+    val errorFlow = _errorFlow.asStateFlow()
 
     /** DataStore から設定を読み出して [CameraSettingData] を作る */
     val settingDataFlow = context.dataStore.data.map {
@@ -271,41 +278,95 @@ class KomaDroidCameraManager(
                 // カメラを開けるか
                 // 全部非同期なので、Flow にした後、複数の Flow を一つにしてすべての準備ができるのを待つ。
                 combine(
-                    frontCameraFlow,
-                    backCameraFlow
-                ) { a, b -> a to b }.collectLatest { (frontCamera, backCamera) ->
+                    frontCameraStateFlow,
+                    backCameraStateFlow
+                ) { a, b -> a to b }.collectLatest { (frontCameraState, backCameraState) ->
 
                     // フロントカメラ、バックカメラがすべて準備完了になるまで待つ
-                    frontCamera ?: return@collectLatest
-                    backCamera ?: return@collectLatest
+                    // カメラが Open 以外は return
+                    val frontCameraDevice = when (frontCameraState) {
+                        // null は初期値
+                        null -> return@collectLatest
+                        // CameraDevice があれば OK
+                        is CameraDeviceState.Open -> frontCameraState.cameraDevice
+                        // エラーは多分戻ってこないので return
+                        // TODO なんかいい感じにエラーはまとめたい
+                        CameraDeviceState.Error -> {
+                            _errorFlow.value = ErrorType.CameraOpenError
+                            return@collectLatest
+                        }
+
+                        CameraDeviceState.Disconnect -> {
+                            _errorFlow.value = ErrorType.UnknownError
+                            return@collectLatest
+                        }
+                    }
+                    val backCameraDevice = when (backCameraState) {
+                        null -> return@collectLatest
+                        is CameraDeviceState.Open -> backCameraState.cameraDevice
+                        CameraDeviceState.Error -> {
+                            _errorFlow.value = ErrorType.CameraOpenError
+                            return@collectLatest
+                        }
+
+                        CameraDeviceState.Disconnect -> {
+                            _errorFlow.value = ErrorType.UnknownError
+                            return@collectLatest
+                        }
+                    }
+
                     val cameraSettingData = settingDataFlow.filterNotNull().first()
 
-                    // フロントカメラの設定
-                    // 出力先
-                    val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                        frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                        set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
-                        set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
-                    }
-                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList) ?: return@collectLatest
-                    frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
+                    // フロントカメラ
+                    val frontCameraCaptureRequest: CaptureRequest.Builder
+                    val frontCameraCaptureSession: CameraCaptureSession
+                    try {
+                        frontCameraCaptureRequest = frontCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                            frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                            set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
+                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                        }
 
-                    // バックカメラの設定
-                    val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                        backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                        set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
-                        set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                        frontCameraCaptureSession = frontCameraDevice.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList, cameraExecutor)
+                        frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
+                    } catch (e: CameraAccessException) {
+                        // エラー return
+                        _errorFlow.value = ErrorType.UnknownError
+                        return@collectLatest
+                    } catch (e: SessionConfigureFailedException) {
+                        // セッション構成に失敗した return
+                        _errorFlow.value = ErrorType.UnknownError
+                        return@collectLatest
                     }
-                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList) ?: return@collectLatest
-                    backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
 
-                    // ズーム状態を監視する
-                    collectZoomLevelFlow(
-                        backCameraCaptureSession = backCameraCaptureSession,
-                        backCameraCaptureRequest = backCameraCaptureRequest,
-                        frontCameraCaptureSession = frontCameraCaptureSession,
-                        frontCameraCaptureRequest = frontCameraCaptureRequest
-                    )
+                    // バックカメラ
+                    val backCameraCaptureRequest: CaptureRequest.Builder
+                    val backCameraCaptureSession: CameraCaptureSession
+                    try {
+                        backCameraCaptureRequest = backCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                            backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                            set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
+                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                        }
+
+                        backCameraCaptureSession = backCameraDevice.awaitCameraSessionConfiguration(backCameraOutputSurfaceList, cameraExecutor)
+                        backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
+                    } catch (e: CameraAccessException) {
+                        _errorFlow.value = ErrorType.UnknownError
+                        return@collectLatest
+                    } catch (e: SessionConfigureFailedException) {
+                        _errorFlow.value = ErrorType.UnknownError
+                        return@collectLatest
+                    }
+
+                    launch {
+                        collectZoomFlowAndSetZoomLevel(
+                            backCameraCaptureSession = backCameraCaptureSession,
+                            backCameraCaptureRequest = backCameraCaptureRequest,
+                            frontCameraCaptureSession = frontCameraCaptureSession,
+                            frontCameraCaptureRequest = frontCameraCaptureRequest
+                        )
+                    }
                 }
             }
         }
@@ -321,26 +382,44 @@ class KomaDroidCameraManager(
         currentJob = scope.launch {
 
             // 用意が揃うまで待つ
-            val frontCamera = frontCameraFlow.filterNotNull().first()
-            val backCamera = backCameraFlow.filterNotNull().first()
+            val frontCameraState = frontCameraStateFlow.filterIsInstance<CameraDeviceState.Open>().first()
+            val backCameraState = backCameraStateFlow.filterIsInstance<CameraDeviceState.Open>().first()
             val cameraSetting = settingDataFlow.filterNotNull().first()
 
-            // フロントカメラの設定
-            // 出力先
-            val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
-            }.build()
-            val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList)
-            frontCameraCaptureSession?.capture(frontCameraCaptureRequest, null, null)
+            // セッション構成に失敗したら return
+            // フロントカメラ
+            try {
+                val frontCameraCaptureRequest = frontCameraState.cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                    frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                    set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
+                }.build()
 
-            // バックカメラの設定
-            val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
-            }.build()
-            val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList)
-            backCameraCaptureSession?.capture(backCameraCaptureRequest, null, null)
+                val frontCameraCaptureSession = frontCameraState.cameraDevice.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList, cameraExecutor)
+                frontCameraCaptureSession.capture(frontCameraCaptureRequest, null, null)
+            } catch (e: CameraAccessException) {
+                _errorFlow.value = ErrorType.UnknownError
+                return@launch
+            } catch (e: SessionConfigureFailedException) {
+                _errorFlow.value = ErrorType.UnknownError
+                return@launch
+            }
+
+            // バックカメラ
+            try {
+                val backCameraCaptureRequest = backCameraState.cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                    backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                    set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
+                }.build()
+
+                val backCameraCaptureSession = backCameraState.cameraDevice.awaitCameraSessionConfiguration(backCameraOutputSurfaceList, cameraExecutor)
+                backCameraCaptureSession.capture(backCameraCaptureRequest, null, null)
+            } catch (e: CameraAccessException) {
+                _errorFlow.value = ErrorType.UnknownError
+                return@launch
+            } catch (e: SessionConfigureFailedException) {
+                _errorFlow.value = ErrorType.UnknownError
+                return@launch
+            }
 
             // ImageReader に OpenGL ES で描画する
             // プレビューと違ってテクスチャが来るのを待つ
@@ -377,33 +456,80 @@ class KomaDroidCameraManager(
                 // カメラを開けるか
                 // 全部非同期なのでコールバックを待つ
                 combine(
-                    frontCameraFlow,
-                    backCameraFlow
-                ) { a, b -> a to b }.collectLatest { (frontCamera, backCamera) ->
+                    frontCameraStateFlow,
+                    backCameraStateFlow
+                ) { a, b -> a to b }.collectLatest { (_frontCameraState, _backCameraState) ->
 
-                    // 用意が揃うまで待つ
-                    frontCamera ?: return@collectLatest
-                    backCamera ?: return@collectLatest
+                    // フロントカメラ、バックカメラがすべて準備完了になるまで待つ
+                    // カメラが Open 以外は return
+                    val frontCameraDevice = when (_frontCameraState) {
+                        null -> return@collectLatest
+                        is CameraDeviceState.Open -> _frontCameraState.cameraDevice
+                        CameraDeviceState.Error -> {
+                            _errorFlow.value = ErrorType.CameraOpenError
+                            return@collectLatest
+                        }
+
+                        CameraDeviceState.Disconnect -> {
+                            _errorFlow.value = ErrorType.UnknownError
+                            return@collectLatest
+                        }
+                    }
+                    val backCameraDevice = when (_backCameraState) {
+                        null -> return@collectLatest
+                        is CameraDeviceState.Open -> _backCameraState.cameraDevice
+                        CameraDeviceState.Error -> {
+                            _errorFlow.value = ErrorType.CameraOpenError
+                            return@collectLatest
+                        }
+
+                        CameraDeviceState.Disconnect -> {
+                            _errorFlow.value = ErrorType.UnknownError
+                            return@collectLatest
+                        }
+                    }
+
                     val cameraSettingData = settingDataFlow.filterNotNull().first()
 
-                    // フロントカメラの設定
-                    // 出力先
-                    val frontCameraCaptureRequest = frontCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                        frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                        set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
-                        set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
-                    }
-                    val frontCameraCaptureSession = frontCamera.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList) ?: return@collectLatest
-                    frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
+                    // フロントカメラ
+                    val frontCameraCaptureSession: CameraCaptureSession
+                    val frontCameraCaptureRequest: CaptureRequest.Builder
+                    try {
+                        frontCameraCaptureRequest = frontCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                            frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                            set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
+                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                        }
 
-                    // バックカメラの設定
-                    val backCameraCaptureRequest = backCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                        backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
-                        set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
-                        set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                        frontCameraCaptureSession = frontCameraDevice.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList, cameraExecutor)
+                        frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
+                    } catch (e: CameraAccessException) {
+                        _errorFlow.value = ErrorType.UnknownError
+                        return@collectLatest
+                    } catch (e: SessionConfigureFailedException) {
+                        _errorFlow.value = ErrorType.UnknownError
+                        return@collectLatest
                     }
-                    val backCameraCaptureSession = backCamera.awaitCameraSessionConfiguration(backCameraOutputSurfaceList) ?: return@collectLatest
-                    backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
+
+                    // バックカメラ
+                    val backCameraCaptureSession: CameraCaptureSession
+                    val backCameraCaptureRequest: CaptureRequest.Builder
+                    try {
+                        backCameraCaptureRequest = backCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                            backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
+                            set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
+                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                        }
+
+                        backCameraCaptureSession = backCameraDevice.awaitCameraSessionConfiguration(backCameraOutputSurfaceList, cameraExecutor)
+                        backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
+                    } catch (e: CameraAccessException) {
+                        _errorFlow.value = ErrorType.UnknownError
+                        return@collectLatest
+                    } catch (e: SessionConfigureFailedException) {
+                        _errorFlow.value = ErrorType.UnknownError
+                        return@collectLatest
+                    }
 
                     _isVideoRecordingFlow.value = true
                     // 両方の映像が来るまで録画を開始しない
@@ -413,7 +539,7 @@ class KomaDroidCameraManager(
                         listOf(
                             launch {
                                 // ズームを適用する
-                                collectZoomLevelFlow(
+                                collectZoomFlowAndSetZoomLevel(
                                     backCameraCaptureSession = backCameraCaptureSession,
                                     backCameraCaptureRequest = backCameraCaptureRequest,
                                     frontCameraCaptureSession = frontCameraCaptureSession,
@@ -478,6 +604,11 @@ class KomaDroidCameraManager(
         currentJob?.cancelAndJoin()
     }
 
+    /** エラーを閉じる */
+    fun closeError() {
+        _errorFlow.value = null
+    }
+
     /** 破棄時に呼び出す。Activity の onDestroy とかで呼んでください。 */
     fun destroy() {
         scope.launch {
@@ -485,8 +616,6 @@ class KomaDroidCameraManager(
             recordAkariGraphicsProcessor?.destroy()
             recordFrontCameraAkariSurfaceTexture?.destroy()
             recordBackCameraAkariSurfaceTexture?.destroy()
-            frontCameraFlow.value?.close()
-            backCameraFlow.value?.close()
             cancel()
         }
     }
@@ -596,26 +725,6 @@ class KomaDroidCameraManager(
         setTextureSize(width, height)
     }
 
-    /**
-     * [SessionConfiguration]が非同期なので、コルーチンで出来るように
-     *
-     * @param outputSurfaceList 出力先[Surface]
-     */
-    private suspend fun CameraDevice.awaitCameraSessionConfiguration(outputSurfaceList: List<Surface>) = suspendCancellableCoroutine { continuation ->
-        // OutputConfiguration を作る
-        val outputConfigurationList = outputSurfaceList.map { surface -> OutputConfiguration(surface) }
-        val sessionConfiguration = SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputConfigurationList, cameraExecutor, object : CameraCaptureSession.StateCallback() {
-            override fun onConfigured(captureSession: CameraCaptureSession) {
-                continuation.resume(captureSession)
-            }
-
-            override fun onConfigureFailed(p0: CameraCaptureSession) {
-                continuation.resume(null)
-            }
-        })
-        createCaptureSession(sessionConfiguration)
-    }
-
     /** [ImageReader]から写真を取り出して、端末のギャラリーに登録する拡張関数。 */
     private suspend fun ImageReader.saveJpegImage(cameraSettingData: CameraSettingData) = withContext(Dispatchers.IO) {
         val image = acquireLatestImage()
@@ -655,8 +764,8 @@ class KomaDroidCameraManager(
         _cameraZoomDataFlow.value = zoomData
     }
 
-    /** カメラのズームをセットして、[CameraCaptureSession.setRepeatingRequest]を再度呼び出す。Flow を購読するので、一時停止し続けます。 */
-    private suspend fun collectZoomLevelFlow(
+    /** カメラのズームをセットして、[CameraCaptureSession.setRepeatingRequest]を再度呼び出す。Flow を購読するので、一時停止し続けます。TODO 多分これも[CameraAccessException]の例外を見る必要がある、が、セッションが確立しないとこの関数が呼ばれないので今のところは動いている。 */
+    private suspend fun collectZoomFlowAndSetZoomLevel(
         backCameraCaptureSession: CameraCaptureSession,
         backCameraCaptureRequest: CaptureRequest.Builder,
         frontCameraCaptureSession: CameraCaptureSession,
@@ -681,36 +790,6 @@ class KomaDroidCameraManager(
                     frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
                 }
         }
-    }
-
-    /**
-     * カメラを開く
-     * 開くのに成功したら[CameraDevice]を流します。失敗したら null を流します。
-     *
-     * @param cameraId 起動したいカメラ
-     */
-    @SuppressLint("MissingPermission")
-    private fun openCameraFlow(cameraId: String) = callbackFlow {
-        var _cameraDevice: CameraDevice? = null
-        cameraManager.openCamera(cameraId, cameraExecutor, object : CameraDevice.StateCallback() {
-            override fun onOpened(camera: CameraDevice) {
-                _cameraDevice = camera
-                trySend(camera)
-            }
-
-            override fun onDisconnected(camera: CameraDevice) {
-                trySend(null)
-                _cameraDevice = camera
-                camera.close()
-            }
-
-            override fun onError(camera: CameraDevice, error: Int) {
-                trySend(null)
-                _cameraDevice = camera
-                camera.close()
-            }
-        })
-        awaitClose { _cameraDevice?.close() }
     }
 
     /** 画面回転に合わせて width / height を入れ替える */

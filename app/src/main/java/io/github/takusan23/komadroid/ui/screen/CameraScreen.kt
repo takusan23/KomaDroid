@@ -32,6 +32,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import io.github.takusan23.komadroid.KomaDroidCameraManager
 import io.github.takusan23.komadroid.tool.DataStoreTool
 import io.github.takusan23.komadroid.ui.components.CameraControlOverlay
+import io.github.takusan23.komadroid.ui.components.ErrorDialog
 import io.github.takusan23.komadroid.ui.components.ScreenRotateType
 import io.github.takusan23.komadroid.ui.screen.setting.SettingSheet
 import kotlinx.coroutines.launch
@@ -87,6 +88,7 @@ fun CameraScreen(onNavigation: (MainScreenNavigation) -> Unit) {
             val zoomData = cameraManager.cameraZoomDataFlow.collectAsState()
             val cameraSettingData = cameraManager.settingDataFlow.collectAsState(initial = null)
             val isVideoRecording = cameraManager.isVideoRecordingFlow.collectAsState()
+            val errorOrNull = cameraManager.errorFlow.collectAsState()
 
             val isMoveEnable = remember { mutableStateOf(false) }
             val currentScreenRotateType = remember { mutableStateOf(ScreenRotateType.UnLockScreenRotation) }
@@ -99,6 +101,14 @@ fun CameraScreen(onNavigation: (MainScreenNavigation) -> Unit) {
                     ScreenRotateType.UnLockScreenRotation -> ActivityInfo.SCREEN_ORIENTATION_SENSOR // 端末設定よりもセンサーを優先する
                     ScreenRotateType.LockScreenRotation -> if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 }
+            }
+
+            // エラー
+            if (errorOrNull.value != null) {
+                ErrorDialog(
+                    errorType = errorOrNull.value!!,
+                    onDismiss = { cameraManager.closeError() }
+                )
             }
 
             // 設定を開くか
