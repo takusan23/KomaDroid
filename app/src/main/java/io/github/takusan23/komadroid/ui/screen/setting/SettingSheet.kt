@@ -37,7 +37,6 @@ fun SettingSheet(
     val isLandScape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     ModalBottomSheet(
-        windowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier.then(
             if (isLandScape) {
                 Modifier

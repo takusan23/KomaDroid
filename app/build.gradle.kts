@@ -1,16 +1,17 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.compose.compiler)
 }
 
 android {
     namespace = "io.github.takusan23.komadroid"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "io.github.takusan23.komadroid"
         minSdk = 30
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 2
         versionName = "1.0.1"
 
