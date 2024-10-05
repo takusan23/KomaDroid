@@ -497,13 +497,13 @@ void main() {
         private const val FRAGMENT_SHADER_DRAW_MODE_FBO = 3
 
         private const val FRAGMENT_SHADER = """#version 300 es
-#extension GL_OES_EGL_image_external_essl3 : require
+#extension GL_EXT_YUV_target : require
 precision mediump float;
 
 in vec2 vTextureCoord;
 uniform sampler2D sCanvasTexture;
 uniform sampler2D sFboTexture;
-uniform samplerExternalOES sSurfaceTexture;
+uniform __samplerExternal2DY2YEXT sSurfaceTexture;
 
 // 何を描画するか
 // 1 SurfaceTexture（カメラや動画のデコード映像）
@@ -514,11 +514,22 @@ uniform int iDrawMode;
 // 出力色
 out vec4 FragColor;
 
+// https://github.com/android/camera-samples/blob/a07d5f1667b1c022dac2538d1f553df20016d89c/Camera2Video/app/src/main/java/com/example/android/camera2/video/HardwarePipeline.kt#L107
+vec3 yuvToRgb(vec3 yuv) {
+  const vec3 yuvOffset = vec3(0.0625, 0.5, 0.5);
+  const mat3 yuvToRgbColorTransform = mat3(
+    1.1689f, 1.1689f, 1.1689f,
+    0.0000f, -0.1881f, 2.1502f,
+    1.6853f, -0.6530f, 0.0000f
+  );
+  return clamp(yuvToRgbColorTransform * (yuv - yuvOffset), 0.0, 1.0);
+}
+
 void main() {   
   vec4 outColor = vec4(0.0, 0.0, 0.0, 1.0);
 
   if (iDrawMode == 1) {
-    outColor = texture(sSurfaceTexture, vTextureCoord);
+    outColor.rgb = yuvToRgb(texture(sSurfaceTexture, vTextureCoord).rgb);
   } else if (iDrawMode == 2) {
     // テクスチャ座標なので Y を反転
     outColor = texture(sCanvasTexture, vec2(vTextureCoord.x, 1.0 - vTextureCoord.y));
