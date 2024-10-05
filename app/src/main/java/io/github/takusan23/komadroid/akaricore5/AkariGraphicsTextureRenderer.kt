@@ -453,7 +453,12 @@ class AkariGraphicsTextureRenderer(
         val compiled = IntArray(1)
         GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compiled, 0)
         if (compiled[0] == 0) {
-            shader = 0
+            // 失敗したら例外を投げる。その際に構文エラーのメッセージを取得する
+            val syntaxErrorMessage = GLES20.glGetShaderInfoLog(shader)
+            GLES20.glDeleteShader(shader)
+            throw GlslSyntaxErrorException(syntaxErrorMessage)
+            // ここで return 0 しても例外を投げるので意味がない
+            // shader = 0
         }
         return shader
     }
@@ -471,12 +476,14 @@ class AkariGraphicsTextureRenderer(
             1.0f, 1.0f, 0f, 1f, 1f
         )
 
-        private const val VERTEX_SHADER = """
+        private const val VERTEX_SHADER = """#version 300 es
+in vec4 aPosition;
+in vec4 aTextureCoord;
+
 uniform mat4 uMVPMatrix;
 uniform mat4 uSTMatrix;
-attribute vec4 aPosition;
-attribute vec4 aTextureCoord;
-varying vec2 vTextureCoord;
+
+out vec2 vTextureCoord;
 
 void main() {
   gl_Position = uMVPMatrix * aPosition;
@@ -489,11 +496,11 @@ void main() {
         private const val FRAGMENT_SHADER_DRAW_MODE_CANVAS_BITMAP = 2
         private const val FRAGMENT_SHADER_DRAW_MODE_FBO = 3
 
-        private const val FRAGMENT_SHADER = """
-#extension GL_OES_EGL_image_external : require
+        private const val FRAGMENT_SHADER = """#version 300 es
+#extension GL_OES_EGL_image_external_essl3 : require
 precision mediump float;
 
-varying vec2 vTextureCoord;
+in vec2 vTextureCoord;
 uniform sampler2D sCanvasTexture;
 uniform sampler2D sFboTexture;
 uniform samplerExternalOES sSurfaceTexture;
@@ -504,21 +511,22 @@ uniform samplerExternalOES sSurfaceTexture;
 // 3 FBO
 uniform int iDrawMode;
 
-void main() { 
-  // 出力色
-  vec4 outColor = vec4(0., 0., 0., 1.);
+// 出力色
+out vec4 FragColor;
+
+void main() {   
+  vec4 outColor = vec4(0.0, 0.0, 0.0, 1.0);
 
   if (iDrawMode == 1) {
-    outColor = texture2D(sSurfaceTexture, vTextureCoord);
+    outColor = texture(sSurfaceTexture, vTextureCoord);
   } else if (iDrawMode == 2) {
     // テクスチャ座標なので Y を反転
-    outColor = texture2D(sCanvasTexture, vec2(vTextureCoord.x, 1.-vTextureCoord.y));
+    outColor = texture(sCanvasTexture, vec2(vTextureCoord.x, 1.0 - vTextureCoord.y));
   } else if (iDrawMode == 3) {
-    outColor = texture2D(sFboTexture, vTextureCoord);
+    outColor = texture(sFboTexture, vTextureCoord);
   }
 
-  // 出力
-  gl_FragColor = outColor;
+  FragColor = outColor;
 }
 """
     }

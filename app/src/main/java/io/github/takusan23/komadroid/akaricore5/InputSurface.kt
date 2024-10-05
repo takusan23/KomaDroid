@@ -23,7 +23,7 @@ import android.view.Surface
 
 /**
  * MediaCodec で描画する際に OpenGL ES の設定が必要だが、EGL 周りの設定をしてくれるやつ。
- * 実際に描画するフラグメントシェーダーは[CameraTextureRenderer]か[PlusFaceTextureRenderer]
+ * EGL 1.4 、GLES 3.0 でセットアップする。GL スレッドから呼び出すこと。
  *
  * @param outputSurface 出力先 [Surface]
  */
@@ -37,7 +37,7 @@ class InputSurface(private val outputSurface: Surface) {
     }
 
     /**
-     * Prepares EGL.  We want a GLES 2.0 context and a surface that supports recording.
+     * Prepares EGL.  We want a GLES 3.0 context and a surface that supports recording.
      */
     private fun eglSetup() {
         mEGLDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
@@ -48,24 +48,24 @@ class InputSurface(private val outputSurface: Surface) {
         if (!EGL14.eglInitialize(mEGLDisplay, version, 0, version, 1)) {
             throw RuntimeException("unable to initialize EGL14")
         }
-        // Configure EGL for recording and OpenGL ES 2.0.
+        // Configure EGL for recording and OpenGL ES 3.0.
         val attribList = intArrayOf(
             EGL14.EGL_RED_SIZE, 8,
             EGL14.EGL_GREEN_SIZE, 8,
             EGL14.EGL_BLUE_SIZE, 8,
             EGL14.EGL_ALPHA_SIZE, 8,
-            EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+            EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR,
             EGL_RECORDABLE_ANDROID, 1,
             EGL14.EGL_NONE
         )
         val configs = arrayOfNulls<EGLConfig>(1)
         val numConfigs = IntArray(1)
         EGL14.eglChooseConfig(mEGLDisplay, attribList, 0, configs, 0, configs.size, numConfigs, 0)
-        checkEglError("eglCreateContext RGB888+recordable ES2")
+        checkEglError("eglCreateContext RGB888 ES3")
 
-        // Configure context for OpenGL ES 2.0.
+        // Configure context for OpenGL ES 3.0.
         val attrib_list = intArrayOf(
-            EGL14.EGL_CONTEXT_CLIENT_VERSION, 2,
+            EGL14.EGL_CONTEXT_CLIENT_VERSION, 3,
             EGL14.EGL_NONE
         )
         mEGLContext = EGL14.eglCreateContext(
