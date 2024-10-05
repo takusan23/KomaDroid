@@ -50,12 +50,13 @@ class InputSurface(private val outputSurface: Surface) {
         }
         // Configure EGL for recording and OpenGL ES 3.0.
         val attribList = intArrayOf(
-            EGL14.EGL_RED_SIZE, 8,
-            EGL14.EGL_GREEN_SIZE, 8,
-            EGL14.EGL_BLUE_SIZE, 8,
-            EGL14.EGL_ALPHA_SIZE, 8,
             EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR,
-            EGL_RECORDABLE_ANDROID, 1,
+            EGL14.EGL_RED_SIZE, 10,
+            EGL14.EGL_GREEN_SIZE, 10,
+            EGL14.EGL_BLUE_SIZE, 10,
+            EGL14.EGL_ALPHA_SIZE, 2,
+            EGL14.EGL_SURFACE_TYPE, (EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT),
+            // EGL_RECORDABLE_ANDROID, 1, // RGBA1010102 だと使えないし多分いらない
             EGL14.EGL_NONE
         )
         val configs = arrayOfNulls<EGLConfig>(1)
@@ -75,7 +76,9 @@ class InputSurface(private val outputSurface: Surface) {
         checkEglError("eglCreateContext")
 
         // Create a window surface, and attach it to the Surface we received.
+        // EGL_GL_COLORSPACE_BT2020_HLG_EXT を使うことで OpenGL ES で HDR 表示が可能になる
         val surfaceAttribs = intArrayOf(
+            EGL_GL_COLORSPACE_KHR, EGL_GL_COLORSPACE_BT2020_HLG_EXT,
             EGL14.EGL_NONE
         )
         mEGLSurface = EGL14.eglCreateWindowSurface(mEGLDisplay, configs[0], outputSurface, surfaceAttribs, 0)
@@ -133,5 +136,10 @@ class InputSurface(private val outputSurface: Surface) {
 
     companion object {
         private const val EGL_RECORDABLE_ANDROID = 0x3142
+
+        // HDR 表示に必要
+        private const val EGL_GL_COLORSPACE_KHR = 0x309D
+        private const val EGL_GL_COLORSPACE_BT2020_HLG_EXT = 0x3540
+
     }
 }

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.params.DynamicRangeProfiles
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.view.Surface
@@ -70,7 +71,11 @@ suspend fun CameraDevice.awaitCameraSessionConfiguration(
     executor: Executor
 ) = suspendCancellableCoroutine { continuation ->
     // OutputConfiguration を作る
-    val outputConfigurationList = outputSurfaceList.map { surface -> OutputConfiguration(surface) }
+    val outputConfigurationList = outputSurfaceList.map { surface ->
+        OutputConfiguration(surface).apply {
+            dynamicRangeProfile = DynamicRangeProfiles.HLG10
+        }
+    }
     val sessionConfiguration = SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputConfigurationList, executor, object : CameraCaptureSession.StateCallback() {
         override fun onConfigured(captureSession: CameraCaptureSession) {
             continuation.resume(captureSession)
