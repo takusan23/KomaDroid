@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -30,6 +31,7 @@ fun SettingTabMenu(
     ScrollableTabRow(
         modifier = modifier,
         selectedTabIndex = selectIndex,
+        containerColor = Color.Transparent,
         divider = { /* do noting */ },
         indicator = { tabPositions ->
             Box(
@@ -131,7 +133,8 @@ fun ClickSettingItem(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
+        color = Color.Transparent
     ) {
         Row(
             modifier = modifier.padding(10.dp),

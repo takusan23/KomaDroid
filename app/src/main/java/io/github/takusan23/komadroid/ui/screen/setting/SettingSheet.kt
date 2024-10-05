@@ -33,19 +33,8 @@ fun SettingSheet(
     onSettingUpdate: (CameraSettingData) -> Unit,
     onNavigation: (MainScreenNavigation) -> Unit
 ) {
-    val configuration = LocalConfiguration.current
-    val isLandScape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
     ModalBottomSheet(
-        modifier = modifier.then(
-            if (isLandScape) {
-                Modifier
-                    .fillMaxWidth(0.5f)
-                    .fillMaxHeight()
-            } else {
-                Modifier.fillMaxHeight(0.5f)
-            }
-        ),
+        modifier = modifier,
         onDismissRequest = onDismiss
     ) {
         SettingScreen(
@@ -83,7 +72,9 @@ private fun SettingScreen(
                 onUpdate = onSettingUpdate
             )
 
-            Menu.Other -> OtherSetting(onNavigation = onNavigation)
+            Menu.Other -> OtherSetting(
+                onNavigation = onNavigation
+            )
         }
     }
 }
