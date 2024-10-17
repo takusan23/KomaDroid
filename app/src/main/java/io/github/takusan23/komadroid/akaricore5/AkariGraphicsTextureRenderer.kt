@@ -496,7 +496,8 @@ void main() {
         private const val FRAGMENT_SHADER_DRAW_MODE_CANVAS_BITMAP = 2
         private const val FRAGMENT_SHADER_DRAW_MODE_FBO = 3
 
-        private const val FRAGMENT_SHADER = """#version 300 es
+        // TODO 本当は 10bit HDR はこっちの __samplerExternal2DY2YEXT を使う方を使うはず、、、でも従来の方法でも動いている
+        private const val FRAGMENT_SHADER_10BIT_HDR = """#version 300 es
 #extension GL_EXT_YUV_target : require
 precision mediump float;
 
@@ -530,6 +531,40 @@ void main() {
 
   if (iDrawMode == 1) {
     outColor.rgb = yuvToRgb(texture(sSurfaceTexture, vTextureCoord).rgb);
+  } else if (iDrawMode == 2) {
+    // テクスチャ座標なので Y を反転
+    outColor = texture(sCanvasTexture, vec2(vTextureCoord.x, 1.0 - vTextureCoord.y));
+  } else if (iDrawMode == 3) {
+    outColor = texture(sFboTexture, vTextureCoord);
+  }
+
+  FragColor = outColor;
+}
+"""
+
+        private const val FRAGMENT_SHADER = """#version 300 es
+#extension GL_OES_EGL_image_external_essl3 : require
+precision mediump float;
+
+in vec2 vTextureCoord;
+uniform sampler2D sCanvasTexture;
+uniform sampler2D sFboTexture;
+uniform samplerExternalOES sSurfaceTexture;
+
+// 何を描画するか
+// 1 SurfaceTexture（カメラや動画のデコード映像）
+// 2 Bitmap（テキストや画像を描画した Canvas）
+// 3 FBO
+uniform int iDrawMode;
+
+// 出力色
+out vec4 FragColor;
+
+void main() {   
+  vec4 outColor = vec4(0.0, 0.0, 0.0, 1.0);
+
+  if (iDrawMode == 1) {
+    outColor = texture(sSurfaceTexture, vTextureCoord);
   } else if (iDrawMode == 2) {
     // テクスチャ座標なので Y を反転
     outColor = texture(sCanvasTexture, vec2(vTextureCoord.x, 1.0 - vTextureCoord.y));
