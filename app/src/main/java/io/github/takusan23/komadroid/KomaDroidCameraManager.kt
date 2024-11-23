@@ -55,7 +55,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -559,30 +558,16 @@ class KomaDroidCameraManager(
                             launch {
                                 // MediaRecorder に OpenGL ES で描画
                                 // 録画中はループするのでこれ以降の処理には進まない
-                                val startTimeMs = System.currentTimeMillis()
-                                val recordLoopContinueData = AkariGraphicsProcessor.LoopContinueData(
-                                    isRequestNextFrame = true,
-                                    currentFrameMs = System.currentTimeMillis() - startTimeMs
-                                )
-                                // TODO 暫定対応
-                                while (isActive){
-                                    recordAkariGraphicsProcessor?.drawOneshot {
-                                        drawFrame(
-                                            frontTexture = recordFrontCameraAkariSurfaceTexture!!,
-                                            backTexture = recordBackCameraAkariSurfaceTexture!!
-                                        )
-                                    }
-                                }
-/*
+                                val recordLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameMs = 0)
                                 recordAkariGraphicsProcessor?.drawLoop {
                                     drawFrame(
                                         frontTexture = recordFrontCameraAkariSurfaceTexture!!,
                                         backTexture = recordBackCameraAkariSurfaceTexture!!
                                     )
-                                    recordLoopContinueData.currentFrameMs = System.currentTimeMillis() - startTimeMs
+                                    // System.nanoTime() が eglPresentationTimeANDROID のデフォルト値になるらしい
+                                    recordLoopContinueData.currentFrameMs = System.nanoTime() / 1_000_000
                                     recordLoopContinueData
                                 }
-*/
                             }
                         }
                     } finally {
