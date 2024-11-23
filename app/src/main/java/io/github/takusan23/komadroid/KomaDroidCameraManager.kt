@@ -19,7 +19,6 @@ import android.provider.MediaStore
 import android.util.Range
 import android.view.Surface
 import android.view.SurfaceHolder
-import android.view.SurfaceView
 import android.widget.Toast
 import androidx.core.content.contentValuesOf
 import androidx.lifecycle.Lifecycle
@@ -42,13 +41,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -59,7 +55,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
-import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -69,8 +65,7 @@ import java.util.concurrent.Executors
 @OptIn(ExperimentalCoroutinesApi::class)
 class KomaDroidCameraManager(
     private val context: Context,
-    lifecycle: Lifecycle,
-    private val mode: CaptureMode
+    lifecycle: Lifecycle
 ) {
 
     var scale = 0.5f // TODO 拡大縮小
@@ -85,6 +80,8 @@ class KomaDroidCameraManager(
     private val _cameraZoomDataFlow = MutableStateFlow(getCameraZoomSpecification())
     private val _isVideoRecordingFlow = MutableStateFlow(false)
     private val _errorFlow = MutableStateFlow<ErrorType?>(null)
+    private val _surfaceHolderStateFlow = MutableStateFlow<SurfaceHolder?>(null)
+    private val _captureModeFlow = MutableStateFlow(CaptureMode.PICTURE)
 
     /** 今のタスク（動画撮影）キャンセル用 */
     private var currentJob: Job? = null
@@ -97,35 +94,6 @@ class KomaDroidCameraManager(
 
     /** 録画保存先 */
     private var saveVideoFile: File? = null
-
-    /** 出力先 Surface */
-    val surfaceView = SurfaceView(context)
-
-    /**
-     * プレビューを表示する[SurfaceView]のコールバックを[Flow]にする。
-     * [SurfaceView]のコールバックがいつ呼ばれても対応できるように、ホットフローに変換して常にコールバックを監視することにする。
-     */
-    private val previewSurfaceViewFlow = callbackFlow {
-        val callback = object : SurfaceHolder.Callback {
-            override fun surfaceCreated(holder: SurfaceHolder) {
-                trySend(holder)
-            }
-
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                // do nothing
-            }
-
-            override fun surfaceDestroyed(holder: SurfaceHolder) {
-                trySend(null)
-            }
-        }
-        surfaceView.holder.addCallback(callback)
-        awaitClose { surfaceView.holder.removeCallback(callback) }
-    }.stateIn(
-        scope = scope,
-        started = SharingStarted.Eagerly,
-        initialValue = null
-    )
 
     /** 静止画、録画撮影用 [AkariGraphicsProcessor] */
     private var recordAkariGraphicsProcessor: AkariGraphicsProcessor? = null
@@ -182,8 +150,11 @@ class KomaDroidCameraManager(
     /** エラー Flow */
     val errorFlow = _errorFlow.asStateFlow()
 
+    /** 撮影モード */
+    val captureModeFlow = _captureModeFlow.asStateFlow()
+
     /** DataStore から設定を読み出して [CameraSettingData] を作る */
-    val settingDataFlow = context.dataStore.data.map {
+    val cameraSettingFlow = context.dataStore.data.map {
         DataStoreTool.readData(context)
     }.stateIn(
         scope = scope,
@@ -191,84 +162,115 @@ class KomaDroidCameraManager(
         initialValue = null
     )
 
-    /** 用意をする */
-    fun prepare() {
+    init {
+
         scope.launch {
-            // 設定を購読する
-            settingDataFlow.collectLatest { cameraSetting ->
-
-                cameraSetting ?: return@collectLatest
-
+            combine(
+                _captureModeFlow,
+                cameraSettingFlow,
+                ::Pair
+            ).collect { (captureMode, cameraSetting) ->
+                cameraSetting ?: return@collect
+                // 一応破棄
+                // imageReader?.close()
+                // mediaRecorder?.release()
                 // モードに応じて初期化を分岐
-                when (mode) {
+                when (captureMode) {
                     CaptureMode.PICTURE -> initPictureMode(cameraSetting)
                     CaptureMode.VIDEO -> initVideoMode(cameraSetting)
                 }
+            }
+        }
 
-                // カメラ映像を OpenGL ES からテクスチャとして使えるように SurfaceTexture を作る
-                // previewAkariGraphicsProcessor じゃなくて recordAkariGraphicsProcessor でインスタンス生成しているが、
-                // 生成後にプレビュー用の OpenGL コンテキストへアタッチ出来るので、インスタンス生成自体はどの OpenGL コンテキストでもいいはず
-                // TODO もしかしたらプレビューと録画用で SurfaceTexture を作る必要がないかも、attach / detach 出来るっぽい
-                previewFrontCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
-                previewBackCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+        scope.launch {
+            // SurfaceView が再生成された
+            combine(
+                cameraSettingFlow,
+                _surfaceHolderStateFlow,
+                ::Pair
+            ).collectLatest { (cameraSetting, surfaceHolder) ->
+                cameraSetting ?: return@collectLatest
+                surfaceHolder ?: return@collectLatest
+
+                val (width, height) = cameraSetting.orientatedResolution
+
+                // glViewport に合わせる
+                surfaceHolder.setFixedSize(width, height)
+
+                // 新しい SurfaceHolder で作り直す
+                val previewAkariGraphicsProcessor = AkariGraphicsProcessor(
+                    outputSurface = surfaceHolder.surface,
+                    width = width,
+                    height = height,
+                    isEnableTenBitHdr = false
+                ).apply { prepare() }
+
+                // まだプレビュー用の AkariGraphicsSurfaceTexture がない場合は作る
+                if (previewFrontCameraAkariSurfaceTexture == null) {
+                    previewFrontCameraAkariSurfaceTexture = previewAkariGraphicsProcessor.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+                }
+                if (previewBackCameraAkariSurfaceTexture == null) {
+                    previewBackCameraAkariSurfaceTexture = previewAkariGraphicsProcessor.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+                }
+
+                // 解像度
                 previewFrontCameraAkariSurfaceTexture?.setResolution(cameraSetting)
                 previewBackCameraAkariSurfaceTexture?.setResolution(cameraSetting)
 
                 // プレビューを開始する
+                // TODO これが呼ばれるより前に initVideoMode / initPictureMode が呼び出されている必要あり
                 // TODO 三連続ぐらい startPreview() を呼び出すと落ちる
                 startPreview()
 
-                // プレビューへ OpenGL ES で描画する
-                // SurfaceView の生成と破棄に合わせて作り直す
-                // collectLatest で Flow から新しい値が流れてきたらキャンセルするように
-                previewSurfaceViewFlow.collectLatest { holder ->
-                    if (holder != null) {
-
-                        val (width, height) = cameraSetting.orientatedResolution
-
-                        // glViewport に合わせる
-                        holder.setFixedSize(width, height)
-
-                        val previewAkariGraphicsProcessor = AkariGraphicsProcessor(
-                            outputSurface = holder.surface,
-                            width = width,
-                            height = height,
-                            isEnableTenBitHdr = false
-                        ).apply { prepare() }
-
-                        try {
-                            val previewLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameMs = 0)
-                            previewAkariGraphicsProcessor.drawLoop {
-                                drawFrame(
-                                    frontTexture = previewFrontCameraAkariSurfaceTexture!!,
-                                    backTexture = previewBackCameraAkariSurfaceTexture!!
-                                )
-                                previewLoopContinueData
-                            }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: RuntimeException) {
-                            // java.lang.RuntimeException: glBindFramebuffer: glError 1285
-                            // Google Tensor だけ静止画撮影・動画撮影切り替え時に頻繁に落ちる
-                            // Snapdragon だと落ちないのでガチで謎
-                            // もうどうしようもないので checkGlError() の例外をここは無視する
-                            // Google Tensor 、、、許すまじ
-                            e.printStackTrace()
-                        } finally {
-                            withContext(NonCancellable) {
-                                // プレビュー Processor が作り直しになる、それつまり OpenGL のコンテキストも作り直しになる
-                                // ので、detachGl で切り離しておく
-                                // OpenGL ES くん、かなりシビア
-                                previewAkariGraphicsProcessor.destroy {
-                                    previewFrontCameraAkariSurfaceTexture?.detachGl()
-                                    previewBackCameraAkariSurfaceTexture?.detachGl()
-                                }
-                            }
+                try {
+                    val previewLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameMs = 0)
+                    previewAkariGraphicsProcessor.drawLoop {
+                        drawFrame(
+                            frontTexture = previewFrontCameraAkariSurfaceTexture!!,
+                            backTexture = previewBackCameraAkariSurfaceTexture!!
+                        )
+                        previewLoopContinueData
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: RuntimeException) {
+                    // java.lang.RuntimeException: glBindFramebuffer: glError 1285
+                    // Google Tensor だけ静止画撮影・動画撮影切り替え時に頻繁に落ちる
+                    // Snapdragon だと落ちないのでガチで謎
+                    // もうどうしようもないので checkGlError() の例外をここは無視する
+                    // Google Tensor 、、、許すまじ
+                    e.printStackTrace()
+                } finally {
+                    withContext(NonCancellable) {
+                        // プレビュー Processor が作り直しになる、それつまり OpenGL のコンテキストも作り直しになる
+                        // ので、detachGl で切り離しておく
+                        // OpenGL ES くん、かなりシビア
+                        previewAkariGraphicsProcessor.destroy {
+                            previewFrontCameraAkariSurfaceTexture?.detachGl()
+                            previewBackCameraAkariSurfaceTexture?.detachGl()
                         }
                     }
                 }
             }
         }
+    }
+
+    /**
+     * 撮影モードを切り替える
+     *
+     * @param mode 静止画か動画
+     */
+    fun switchCaptureMode(mode: CaptureMode) {
+        _captureModeFlow.value = mode
+    }
+
+    /**
+     * プレビュー[android.view.SurfaceView]の[SurfaceHolder]をセットする
+     *
+     * @param surfaceHolder [android.view.SurfaceView]のコールバック参照。破棄された場合は null
+     */
+    fun setPreviewSurfaceHolder(surfaceHolder: SurfaceHolder?) {
+        _surfaceHolderStateFlow.value = surfaceHolder
     }
 
     /** プレビューを始める */
@@ -282,14 +284,17 @@ class KomaDroidCameraManager(
                 // 全部非同期なので、Flow にした後、複数の Flow を一つにしてすべての準備ができるのを待つ。
                 combine(
                     frontCameraStateFlow,
-                    backCameraStateFlow
-                ) { a, b -> a to b }.collectLatest { (frontCameraState, backCameraState) ->
+                    backCameraStateFlow,
+                    ::Pair
+                ).collectLatest { (frontCameraState, backCameraState) ->
+
+                    // null は初期値
+                    frontCameraState ?: return@collectLatest
+                    backCameraState ?: return@collectLatest
 
                     // フロントカメラ、バックカメラがすべて準備完了になるまで待つ
                     // カメラが Open 以外は return
                     val frontCameraDevice = when (frontCameraState) {
-                        // null は初期値
-                        null -> return@collectLatest
                         // CameraDevice があれば OK
                         is CameraDeviceState.Open -> frontCameraState.cameraDevice
                         // エラーは多分戻ってこないので return
@@ -305,7 +310,6 @@ class KomaDroidCameraManager(
                         }
                     }
                     val backCameraDevice = when (backCameraState) {
-                        null -> return@collectLatest
                         is CameraDeviceState.Open -> backCameraState.cameraDevice
                         CameraDeviceState.Error -> {
                             _errorFlow.value = ErrorType.CameraOpenError
@@ -318,7 +322,7 @@ class KomaDroidCameraManager(
                         }
                     }
 
-                    val cameraSettingData = settingDataFlow.filterNotNull().first()
+                    val cameraSettingData = cameraSettingFlow.filterNotNull().first()
 
                     // フロントカメラ
                     val frontCameraCaptureRequest: CaptureRequest.Builder
@@ -387,7 +391,7 @@ class KomaDroidCameraManager(
             // 用意が揃うまで待つ
             val frontCameraState = frontCameraStateFlow.filterIsInstance<CameraDeviceState.Open>().first()
             val backCameraState = backCameraStateFlow.filterIsInstance<CameraDeviceState.Open>().first()
-            val cameraSetting = settingDataFlow.filterNotNull().first()
+            val cameraSetting = cameraSettingFlow.filterNotNull().first()
 
             // セッション構成に失敗したら return
             // フロントカメラ
@@ -460,14 +464,18 @@ class KomaDroidCameraManager(
                 // 全部非同期なのでコールバックを待つ
                 combine(
                     frontCameraStateFlow,
-                    backCameraStateFlow
-                ) { a, b -> a to b }.collectLatest { (_frontCameraState, _backCameraState) ->
+                    backCameraStateFlow,
+                    ::Pair
+                ).collectLatest { (frontCameraState, backCameraState) ->
+
+                    // null は初期値
+                    frontCameraState ?: return@collectLatest
+                    backCameraState ?: return@collectLatest
 
                     // フロントカメラ、バックカメラがすべて準備完了になるまで待つ
                     // カメラが Open 以外は return
-                    val frontCameraDevice = when (_frontCameraState) {
-                        null -> return@collectLatest
-                        is CameraDeviceState.Open -> _frontCameraState.cameraDevice
+                    val frontCameraDevice = when (frontCameraState) {
+                        is CameraDeviceState.Open -> frontCameraState.cameraDevice
                         CameraDeviceState.Error -> {
                             _errorFlow.value = ErrorType.CameraOpenError
                             return@collectLatest
@@ -478,9 +486,8 @@ class KomaDroidCameraManager(
                             return@collectLatest
                         }
                     }
-                    val backCameraDevice = when (_backCameraState) {
-                        null -> return@collectLatest
-                        is CameraDeviceState.Open -> _backCameraState.cameraDevice
+                    val backCameraDevice = when (backCameraState) {
+                        is CameraDeviceState.Open -> backCameraState.cameraDevice
                         CameraDeviceState.Error -> {
                             _errorFlow.value = ErrorType.CameraOpenError
                             return@collectLatest
@@ -492,7 +499,7 @@ class KomaDroidCameraManager(
                         }
                     }
 
-                    val cameraSettingData = settingDataFlow.filterNotNull().first()
+                    val cameraSettingData = cameraSettingFlow.filterNotNull().first()
 
                     // フロントカメラ
                     val frontCameraCaptureSession: CameraCaptureSession
@@ -557,6 +564,16 @@ class KomaDroidCameraManager(
                                     isRequestNextFrame = true,
                                     currentFrameMs = System.currentTimeMillis() - startTimeMs
                                 )
+                                // TODO 暫定対応
+                                while (isActive){
+                                    recordAkariGraphicsProcessor?.drawOneshot {
+                                        drawFrame(
+                                            frontTexture = recordFrontCameraAkariSurfaceTexture!!,
+                                            backTexture = recordBackCameraAkariSurfaceTexture!!
+                                        )
+                                    }
+                                }
+/*
                                 recordAkariGraphicsProcessor?.drawLoop {
                                     drawFrame(
                                         frontTexture = recordFrontCameraAkariSurfaceTexture!!,
@@ -565,6 +582,7 @@ class KomaDroidCameraManager(
                                     recordLoopContinueData.currentFrameMs = System.currentTimeMillis() - startTimeMs
                                     recordLoopContinueData
                                 }
+*/
                             }
                         }
                     } finally {
@@ -593,7 +611,7 @@ class KomaDroidCameraManager(
                             }
 
                             // MediaRecorder は stop したら使えないので、MediaRecorder を作り直してからプレビューに戻す
-                            initVideoMode(cameraSettingData = settingDataFlow.filterNotNull().first())
+                            initVideoMode(cameraSettingData = cameraSettingFlow.filterNotNull().first())
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(context, "保存しました", Toast.LENGTH_SHORT).show()
                             }
@@ -626,6 +644,8 @@ class KomaDroidCameraManager(
             recordAkariGraphicsProcessor?.destroy()
             recordFrontCameraAkariSurfaceTexture?.destroy()
             recordBackCameraAkariSurfaceTexture?.destroy()
+            recordFrontCameraAkariSurfaceTexture?.destroy()
+            recordBackCameraAkariSurfaceTexture?.destroy()
             cancel()
         }
     }
@@ -641,13 +661,14 @@ class KomaDroidCameraManager(
             2
         )
         // 描画を OpenGL に、プレビューと同じ
+        beforeRecreateRecordAkariGraphicsProcessor()
         recordAkariGraphicsProcessor = AkariGraphicsProcessor(
             outputSurface = imageReader!!.surface,
             width = width,
             height = height,
             isEnableTenBitHdr = false
         ).apply { prepare() }
-        generateRecordSurfaceTexture(cameraSettingData)
+        afterRecreateRecordAkariGraphicsProcessor(cameraSettingData)
     }
 
     /** 録画モードの初期化 */
@@ -676,13 +697,14 @@ class KomaDroidCameraManager(
             prepare()
         }
         // 描画を OpenGL に、プレビューと同じ
+        beforeRecreateRecordAkariGraphicsProcessor()
         recordAkariGraphicsProcessor = AkariGraphicsProcessor(
             outputSurface = mediaRecorder!!.surface,
             width = width,
             height = height,
             isEnableTenBitHdr = false // TODO 10Bit HDR のサポート
         ).apply { prepare() }
-        generateRecordSurfaceTexture(cameraSettingData)
+        afterRecreateRecordAkariGraphicsProcessor(cameraSettingData)
     }
 
     /**
@@ -719,12 +741,26 @@ class KomaDroidCameraManager(
         })
     }
 
-    /** 録画用の[AkariGraphicsSurfaceTexture]を作る */
-    private suspend fun generateRecordSurfaceTexture(cameraSettingData: CameraSettingData) {
-        recordFrontCameraAkariSurfaceTexture?.destroy()
-        recordBackCameraAkariSurfaceTexture?.destroy()
-        recordFrontCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
-        recordBackCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+    /** 録画用の[AkariGraphicsProcessor]を破棄する前に呼び出す */
+    private suspend fun beforeRecreateRecordAkariGraphicsProcessor() {
+        // recordAkariGraphicsProcessor を作り直すため、detach して切り離しておく
+        // 作り直したら attach する（TODO が、今のところ描画前に attach しており不要）
+        recordAkariGraphicsProcessor?.destroy {
+            recordFrontCameraAkariSurfaceTexture?.detachGl()
+            recordBackCameraAkariSurfaceTexture?.detachGl()
+        }
+    }
+
+    /** 録画用の[AkariGraphicsProcessor]を生成したときに呼び出す */
+    private suspend fun afterRecreateRecordAkariGraphicsProcessor(cameraSettingData: CameraSettingData) {
+        // そもそもない場合
+        if (recordBackCameraAkariSurfaceTexture == null) {
+            recordFrontCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+        }
+        if (recordBackCameraAkariSurfaceTexture == null) {
+            recordBackCameraAkariSurfaceTexture = recordAkariGraphicsProcessor?.genTextureId { texId -> AkariGraphicsSurfaceTexture(texId) }
+        }
+        // 解像度
         recordFrontCameraAkariSurfaceTexture?.setResolution(cameraSettingData)
         recordBackCameraAkariSurfaceTexture?.setResolution(cameraSettingData)
     }
