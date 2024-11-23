@@ -48,6 +48,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.akaricore)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.datastore.preferences)
     implementation(libs.androidx.core.ktx)

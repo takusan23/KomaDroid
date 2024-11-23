@@ -23,9 +23,9 @@ import android.view.SurfaceView
 import android.widget.Toast
 import androidx.core.content.contentValuesOf
 import androidx.lifecycle.Lifecycle
-import io.github.takusan23.komadroid.akaricore5.AkariGraphicsProcessor
-import io.github.takusan23.komadroid.akaricore5.AkariGraphicsSurfaceTexture
-import io.github.takusan23.komadroid.akaricore5.AkariGraphicsTextureRenderer
+import io.github.takusan23.akaricore.graphics.AkariGraphicsProcessor
+import io.github.takusan23.akaricore.graphics.AkariGraphicsSurfaceTexture
+import io.github.takusan23.akaricore.graphics.AkariGraphicsTextureRenderer
 import io.github.takusan23.komadroid.tool.CameraDeviceState
 import io.github.takusan23.komadroid.tool.CameraSettingData
 import io.github.takusan23.komadroid.tool.DataStoreTool
@@ -232,15 +232,18 @@ class KomaDroidCameraManager(
                         val previewAkariGraphicsProcessor = AkariGraphicsProcessor(
                             outputSurface = holder.surface,
                             width = width,
-                            height = height
+                            height = height,
+                            isEnableTenBitHdr = false
                         ).apply { prepare() }
 
                         try {
+                            val previewLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameMs = 0)
                             previewAkariGraphicsProcessor.drawLoop {
                                 drawFrame(
                                     frontTexture = previewFrontCameraAkariSurfaceTexture!!,
                                     backTexture = previewBackCameraAkariSurfaceTexture!!
                                 )
+                                previewLoopContinueData
                             }
                         } catch (e: CancellationException) {
                             throw e
@@ -536,7 +539,7 @@ class KomaDroidCameraManager(
                     // 録画開始
                     mediaRecorder?.start()
                     try {
-                        listOf(
+                        coroutineScope {
                             launch {
                                 // ズームを適用する
                                 collectZoomFlowAndSetZoomLevel(
@@ -545,18 +548,25 @@ class KomaDroidCameraManager(
                                     frontCameraCaptureSession = frontCameraCaptureSession,
                                     frontCameraCaptureRequest = frontCameraCaptureRequest
                                 )
-                            },
+                            }
                             launch {
                                 // MediaRecorder に OpenGL ES で描画
                                 // 録画中はループするのでこれ以降の処理には進まない
+                                val startTimeMs = System.currentTimeMillis()
+                                val recordLoopContinueData = AkariGraphicsProcessor.LoopContinueData(
+                                    isRequestNextFrame = true,
+                                    currentFrameMs = System.currentTimeMillis() - startTimeMs
+                                )
                                 recordAkariGraphicsProcessor?.drawLoop {
                                     drawFrame(
                                         frontTexture = recordFrontCameraAkariSurfaceTexture!!,
                                         backTexture = recordBackCameraAkariSurfaceTexture!!
                                     )
+                                    recordLoopContinueData.currentFrameMs = System.currentTimeMillis() - startTimeMs
+                                    recordLoopContinueData
                                 }
                             }
-                        ).joinAll()
+                        }
                     } finally {
                         // 録画終了処理
                         // stopRecordVideo を呼び出したときか、collectLatest から新しい値が来た時
@@ -635,6 +645,7 @@ class KomaDroidCameraManager(
             outputSurface = imageReader!!.surface,
             width = width,
             height = height,
+            isEnableTenBitHdr = false
         ).apply { prepare() }
         generateRecordSurfaceTexture(cameraSettingData)
     }
@@ -669,6 +680,7 @@ class KomaDroidCameraManager(
             outputSurface = mediaRecorder!!.surface,
             width = width,
             height = height,
+            isEnableTenBitHdr = false // TODO 10Bit HDR のサポート
         ).apply { prepare() }
         generateRecordSurfaceTexture(cameraSettingData)
     }
@@ -691,20 +703,20 @@ class KomaDroidCameraManager(
         val popupTexture = if (isFlip) backTexture else frontTexture
 
         // カメラ映像を描画する
-        drawSurfaceTexture(backgroundTexture, isAwaitTextureUpdate) { mvpMatrix ->
+        drawSurfaceTexture(backgroundTexture, isAwaitTextureUpdate, onTransform = { mvpMatrix ->
             if (isLandScape) {
                 // 回転する
                 Matrix.rotateM(mvpMatrix, 0, 90f, 0f, 0f, 1f)
             }
-        }
-        drawSurfaceTexture(popupTexture, isAwaitTextureUpdate) { mvpMatrix ->
+        })
+        drawSurfaceTexture(popupTexture, isAwaitTextureUpdate, onTransform = { mvpMatrix ->
             if (isLandScape) {
                 // 回転する
                 Matrix.rotateM(mvpMatrix, 0, 90f, 0f, 0f, 1f)
             }
             Matrix.scaleM(mvpMatrix, 0, scale, scale, 1f)
             Matrix.translateM(mvpMatrix, 0, xPos, yPos, 1f)
-        }
+        })
     }
 
     /** 録画用の[AkariGraphicsSurfaceTexture]を作る */
