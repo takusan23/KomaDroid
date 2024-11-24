@@ -5,6 +5,7 @@ import android.hardware.camera2.CameraManager
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import io.github.takusan23.komadroid.tool.CameraSettingData
@@ -32,12 +33,21 @@ fun VideoSetting(
         // TODO ボトムシートを追加で表示して説明する
         // 10Bit HDR 対応時のみ
         val isAvailable10BitHdr = remember { (context.getSystemService(Context.CAMERA_SERVICE) as CameraManager).isTenBitProfileSupported() }
+        val isVisibleTenBitHdrBottomSheet = remember { mutableStateOf(false) }
         if (isAvailable10BitHdr) {
             SwitchSettingItem(
-                title = "10Bit HDR 動画撮影を有効にする",
+                title = "10 ビット HDR 動画撮影を有効にする",
                 description = "従来の動画（SDR）と比べて、より多くの明るさと色で撮影することが出来ます。\n簡単に言うと「眩しい動画」が撮影できます。",
                 isCheck = settingData.isTenBitHdr,
-                onSwitchChange = { onUpdate(settingData.copy(isTenBitHdr = it)) }
+                onSwitchChange = { isVisibleTenBitHdrBottomSheet.value = true }
+            )
+        }
+        // ボトムシートを出す場合
+        if (isVisibleTenBitHdrBottomSheet.value) {
+            TenBitHdrSettingBottomSheet(
+                settingData = settingData,
+                onUpdate = onUpdate,
+                onDismissRequest = { isVisibleTenBitHdrBottomSheet.value = false }
             )
         }
 
