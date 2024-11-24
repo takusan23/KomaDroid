@@ -2,10 +2,14 @@ package io.github.takusan23.komadroid.tool
 
 import android.annotation.SuppressLint
 import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.params.DynamicRangeProfiles
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
+import android.os.Build
 import android.view.Surface
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
@@ -64,13 +68,22 @@ sealed interface CameraDeviceState {
  *
  * @param outputSurfaceList 出力先[Surface]
  * @param executor [java.util.concurrent.Executors.newSingleThreadExecutor]とか
+ * @param isEnableHdrCapture 10Bit HDR 動画撮影をする場合。[isTenBitProfileSupported]が true の場合は利用可能です。HLG 形式になります。
  */
 suspend fun CameraDevice.awaitCameraSessionConfiguration(
     outputSurfaceList: List<Surface>,
-    executor: Executor
+    executor: Executor,
+    isEnableHdrCapture: Boolean = false
 ) = suspendCancellableCoroutine { continuation ->
     // OutputConfiguration を作る
-    val outputConfigurationList = outputSurfaceList.map { surface -> OutputConfiguration(surface) }
+    val outputConfigurationList = outputSurfaceList
+        .map { surface -> OutputConfiguration(surface) }
+        .onEach { outputConfig ->
+            // 10Bit HDR 動画撮影する場合
+            if (isEnableHdrCapture && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                outputConfig.dynamicRangeProfile = DynamicRangeProfiles.HLG10
+            }
+        }
     val sessionConfiguration = SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputConfigurationList, executor, object : CameraCaptureSession.StateCallback() {
         override fun onConfigured(captureSession: CameraCaptureSession) {
             continuation.resume(captureSession)
@@ -85,3 +98,21 @@ suspend fun CameraDevice.awaitCameraSessionConfiguration(
 
 /** [CameraCaptureSession.StateCallback.onConfigureFailed]時に投げる例外 */
 class SessionConfigureFailedException() : RuntimeException()
+
+/**
+ * TODO 置き場がないのでとりあえずここで、、
+ *
+ * Camera2 API で 10Bit HDR をサポートしているか。
+ * Android 13 以上で、Camera2 API （サードパーティカメラアプリ）でも 10Bit HDR を使える場合。
+ *
+ * 10Bit HDR 動画撮影をサポートしている場合、少なくとも HLG 形式での HDR に対応しているそう。
+ * https://developer.android.com/media/camera/camera2/hdr-video-capture#resources
+ *
+ * @param cameraId カメラのID
+ * @return 10Bit HDR 動画撮影に対応している場合は true
+ */
+fun CameraManager.isTenBitProfileSupported(cameraId: String): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    val cameraCharacteristics = getCameraCharacteristics(cameraId)
+    val availableCapabilities = cameraCharacteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
+    availableCapabilities?.any { it == CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_DYNAMIC_RANGE_TEN_BIT } == true
+} else false
