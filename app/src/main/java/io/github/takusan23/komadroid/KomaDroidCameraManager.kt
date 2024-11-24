@@ -162,46 +162,37 @@ class KomaDroidCameraManager(
     )
 
     init {
-
         scope.launch {
+            // SurfaceView が再生成された
+            // 設定内容が変化した
+            // 撮影モード（静止画、動画撮影）が変化した
+            // 撮影モード切り替えででプレビューまで作り直している理由は 10Bit HDR のプレビューのため
             combine(
-                _captureModeFlow,
                 cameraSettingFlow,
-                ::Pair
-            ).collect { (captureMode, cameraSetting) ->
-                cameraSetting ?: return@collect
-                // 一応破棄
-                // imageReader?.close()
-                // mediaRecorder?.release()
+                _surfaceHolderStateFlow,
+                _captureModeFlow,
+                ::Triple
+            ).collectLatest { (cameraSetting, surfaceHolder, captureMode) ->
+                cameraSetting ?: return@collectLatest
+                surfaceHolder ?: return@collectLatest
+
                 // モードに応じて初期化を分岐
                 when (captureMode) {
                     CaptureMode.PICTURE -> initPictureMode(cameraSetting)
                     CaptureMode.VIDEO -> initVideoMode(cameraSetting)
                 }
-            }
-        }
-
-        scope.launch {
-            // SurfaceView が再生成された
-            combine(
-                cameraSettingFlow,
-                _surfaceHolderStateFlow,
-                ::Pair
-            ).collectLatest { (cameraSetting, surfaceHolder) ->
-                cameraSetting ?: return@collectLatest
-                surfaceHolder ?: return@collectLatest
-
-                val (width, height) = cameraSetting.orientatedResolution
 
                 // glViewport に合わせる
+                val (width, height) = cameraSetting.orientatedResolution
                 surfaceHolder.setFixedSize(width, height)
 
                 // 新しい SurfaceHolder で作り直す
+                // 10Bit HDR は動画撮影でかつ 10Bit HDR 有効時のみ
                 val previewAkariGraphicsProcessor = AkariGraphicsProcessor(
                     outputSurface = surfaceHolder.surface,
                     width = width,
                     height = height,
-                    isEnableTenBitHdr = false
+                    isEnableTenBitHdr = captureMode == CaptureMode.VIDEO && cameraSetting.isTenBitHdr
                 ).apply { prepare() }
 
                 // まだプレビュー用の AkariGraphicsSurfaceTexture がない場合は作る
@@ -217,7 +208,6 @@ class KomaDroidCameraManager(
                 previewBackCameraAkariSurfaceTexture?.setResolution(cameraSetting)
 
                 // プレビューを開始する
-                // TODO これが呼ばれるより前に initVideoMode / initPictureMode が呼び出されている必要あり
                 // TODO 三連続ぐらい startPreview() を呼び出すと落ちる
                 startPreview()
 
@@ -321,7 +311,11 @@ class KomaDroidCameraManager(
                         }
                     }
 
-                    val cameraSettingData = cameraSettingFlow.filterNotNull().first()
+                    val cameraSetting = cameraSettingFlow.filterNotNull().first()
+                    val captureMode = captureModeFlow.value
+
+                    // 10Bit HDR は動画撮影でかつ 10Bit HDR 有効時のみ
+                    val isEnableTenBitHdr = captureMode == CaptureMode.VIDEO && cameraSetting.isTenBitHdr
 
                     // フロントカメラ
                     val frontCameraCaptureRequest: CaptureRequest.Builder
@@ -330,10 +324,14 @@ class KomaDroidCameraManager(
                         frontCameraCaptureRequest = frontCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                             frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                             set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
-                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSetting.cameraFps.fps, cameraSetting.cameraFps.fps))
                         }
 
-                        frontCameraCaptureSession = frontCameraDevice.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList, cameraExecutor)
+                        frontCameraCaptureSession = frontCameraDevice.awaitCameraSessionConfiguration(
+                            frontCameraOutputSurfaceList,
+                            cameraExecutor,
+                            isEnableTenBitHdr = isEnableTenBitHdr
+                        )
                         frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
                     } catch (e: CameraAccessException) {
                         // エラー return
@@ -352,10 +350,14 @@ class KomaDroidCameraManager(
                         backCameraCaptureRequest = backCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                             backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                             set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
-                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSetting.cameraFps.fps, cameraSetting.cameraFps.fps))
                         }
 
-                        backCameraCaptureSession = backCameraDevice.awaitCameraSessionConfiguration(backCameraOutputSurfaceList, cameraExecutor)
+                        backCameraCaptureSession = backCameraDevice.awaitCameraSessionConfiguration(
+                            backCameraOutputSurfaceList,
+                            cameraExecutor,
+                            isEnableTenBitHdr = isEnableTenBitHdr
+                        )
                         backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
                     } catch (e: CameraAccessException) {
                         _errorFlow.value = ErrorType.UnknownError
@@ -400,7 +402,11 @@ class KomaDroidCameraManager(
                     set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
                 }.build()
 
-                val frontCameraCaptureSession = frontCameraState.cameraDevice.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList, cameraExecutor)
+                val frontCameraCaptureSession = frontCameraState.cameraDevice.awaitCameraSessionConfiguration(
+                    frontCameraOutputSurfaceList,
+                    cameraExecutor,
+                    isEnableTenBitHdr = false // 静止画撮影では HDR 使わないので
+                )
                 frontCameraCaptureSession.capture(frontCameraCaptureRequest, null, null)
             } catch (e: CameraAccessException) {
                 _errorFlow.value = ErrorType.UnknownError
@@ -417,7 +423,11 @@ class KomaDroidCameraManager(
                     set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
                 }.build()
 
-                val backCameraCaptureSession = backCameraState.cameraDevice.awaitCameraSessionConfiguration(backCameraOutputSurfaceList, cameraExecutor)
+                val backCameraCaptureSession = backCameraState.cameraDevice.awaitCameraSessionConfiguration(
+                    backCameraOutputSurfaceList,
+                    cameraExecutor,
+                    isEnableTenBitHdr = false
+                )
                 backCameraCaptureSession.capture(backCameraCaptureRequest, null, null)
             } catch (e: CameraAccessException) {
                 _errorFlow.value = ErrorType.UnknownError
@@ -498,7 +508,7 @@ class KomaDroidCameraManager(
                         }
                     }
 
-                    val cameraSettingData = cameraSettingFlow.filterNotNull().first()
+                    val cameraSetting = cameraSettingFlow.filterNotNull().first()
 
                     // フロントカメラ
                     val frontCameraCaptureSession: CameraCaptureSession
@@ -507,10 +517,14 @@ class KomaDroidCameraManager(
                         frontCameraCaptureRequest = frontCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             frontCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                             set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentFrontCameraZoom)
-                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSetting.cameraFps.fps, cameraSetting.cameraFps.fps))
                         }
 
-                        frontCameraCaptureSession = frontCameraDevice.awaitCameraSessionConfiguration(frontCameraOutputSurfaceList, cameraExecutor)
+                        frontCameraCaptureSession = frontCameraDevice.awaitCameraSessionConfiguration(
+                            frontCameraOutputSurfaceList,
+                            cameraExecutor,
+                            isEnableTenBitHdr = cameraSetting.isTenBitHdr
+                        )
                         frontCameraCaptureSession.setRepeatingRequest(frontCameraCaptureRequest.build(), null, null)
                     } catch (e: CameraAccessException) {
                         _errorFlow.value = ErrorType.UnknownError
@@ -527,10 +541,14 @@ class KomaDroidCameraManager(
                         backCameraCaptureRequest = backCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             backCameraOutputSurfaceList.forEach { surface -> addTarget(surface) }
                             set(CaptureRequest.CONTROL_ZOOM_RATIO, cameraZoomDataFlow.value.currentBackCameraZoom)
-                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSettingData.cameraFps.fps, cameraSettingData.cameraFps.fps))
+                            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(cameraSetting.cameraFps.fps, cameraSetting.cameraFps.fps))
                         }
 
-                        backCameraCaptureSession = backCameraDevice.awaitCameraSessionConfiguration(backCameraOutputSurfaceList, cameraExecutor)
+                        backCameraCaptureSession = backCameraDevice.awaitCameraSessionConfiguration(
+                            backCameraOutputSurfaceList,
+                            cameraExecutor,
+                            isEnableTenBitHdr = cameraSetting.isTenBitHdr
+                        )
                         backCameraCaptureSession.setRepeatingRequest(backCameraCaptureRequest.build(), null, null)
                     } catch (e: CameraAccessException) {
                         _errorFlow.value = ErrorType.UnknownError
@@ -687,7 +705,7 @@ class KomaDroidCameraManager(
             outputSurface = mediaRecorder!!.surface,
             width = width,
             height = height,
-            isEnableTenBitHdr = false // TODO 10Bit HDR のサポート
+            isEnableTenBitHdr = cameraSettingData.isTenBitHdr
         ).apply { prepare() }
         afterRecreateRecordAkariGraphicsProcessor(cameraSettingData)
     }

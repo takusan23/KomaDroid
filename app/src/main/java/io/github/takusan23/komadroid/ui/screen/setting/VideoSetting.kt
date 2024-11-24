@@ -1,13 +1,18 @@
 package io.github.takusan23.komadroid.ui.screen.setting
 
+import android.content.Context
+import android.hardware.camera2.CameraManager
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import io.github.takusan23.komadroid.tool.CameraSettingData
 import io.github.takusan23.komadroid.tool.NumberFormat
+import io.github.takusan23.komadroid.tool.isTenBitProfileSupported
 import io.github.takusan23.komadroid.ui.components.DropdownSettingItem
 import io.github.takusan23.komadroid.ui.components.IntValueSettingItem
+import io.github.takusan23.komadroid.ui.components.SwitchSettingItem
 
 private val CameraSettingData.Fps.menuLabel
     get() = when (this) {
@@ -20,7 +25,21 @@ fun VideoSetting(
     settingData: CameraSettingData,
     onUpdate: (CameraSettingData) -> Unit
 ) {
+    val context = LocalContext.current
+
     Column {
+
+        // TODO ボトムシートを追加で表示して説明する
+        // 10Bit HDR 対応時のみ
+        val isAvailable10BitHdr = remember { (context.getSystemService(Context.CAMERA_SERVICE) as CameraManager).isTenBitProfileSupported() }
+        if (isAvailable10BitHdr) {
+            SwitchSettingItem(
+                title = "10Bit HDR 動画撮影を有効にする",
+                description = "従来の動画（SDR）と比べて、より多くの明るさと色で撮影することが出来ます。\n簡単に言うと「眩しい動画」が撮影できます。",
+                isCheck = settingData.isTenBitHdr,
+                onSwitchChange = { onUpdate(settingData.copy(isTenBitHdr = it)) }
+            )
+        }
 
         DropdownSettingItem(
             title = "動画コーデック",

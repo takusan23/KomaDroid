@@ -68,19 +68,19 @@ sealed interface CameraDeviceState {
  *
  * @param outputSurfaceList 出力先[Surface]
  * @param executor [java.util.concurrent.Executors.newSingleThreadExecutor]とか
- * @param isEnableHdrCapture 10Bit HDR 動画撮影をする場合。[isTenBitProfileSupported]が true の場合は利用可能です。HLG 形式になります。
+ * @param isEnableTenBitHdr 10Bit HDR 動画撮影をする場合。[isTenBitProfileSupported]が true の場合は利用可能です。HLG 形式になります。
  */
 suspend fun CameraDevice.awaitCameraSessionConfiguration(
     outputSurfaceList: List<Surface>,
     executor: Executor,
-    isEnableHdrCapture: Boolean = false
+    isEnableTenBitHdr: Boolean
 ) = suspendCancellableCoroutine { continuation ->
     // OutputConfiguration を作る
     val outputConfigurationList = outputSurfaceList
         .map { surface -> OutputConfiguration(surface) }
         .onEach { outputConfig ->
             // 10Bit HDR 動画撮影する場合
-            if (isEnableHdrCapture && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (isEnableTenBitHdr && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 outputConfig.dynamicRangeProfile = DynamicRangeProfiles.HLG10
             }
         }
@@ -108,11 +108,11 @@ class SessionConfigureFailedException() : RuntimeException()
  * 10Bit HDR 動画撮影をサポートしている場合、少なくとも HLG 形式での HDR に対応しているそう。
  * https://developer.android.com/media/camera/camera2/hdr-video-capture#resources
  *
- * @param cameraId カメラのID
  * @return 10Bit HDR 動画撮影に対応している場合は true
  */
-fun CameraManager.isTenBitProfileSupported(cameraId: String): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    val cameraCharacteristics = getCameraCharacteristics(cameraId)
-    val availableCapabilities = cameraCharacteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
-    availableCapabilities?.any { it == CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_DYNAMIC_RANGE_TEN_BIT } == true
+fun CameraManager.isTenBitProfileSupported(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    cameraIdList
+        .map { cameraId -> getCameraCharacteristics(cameraId) }
+        .map { cameraCharacteristics -> cameraCharacteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) }
+        .any { capabilities -> capabilities?.any { it == CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_DYNAMIC_RANGE_TEN_BIT } == true }
 } else false

@@ -1,12 +1,22 @@
 package io.github.takusan23.komadroid.tool
 
-/** height / width は横画面時を想定。縦持ちの場合は入れ替えてください */
+/**
+ * height / width は横画面時を想定。縦持ちの場合は入れ替えてください
+ *
+ * @param frontCameraResolution フロントカメラの解像度
+ * @param backCameraResolution バックカメラの解像度
+ * @param videoCodec 動画撮影のコーデック
+ * @param videoBitrate 動画撮影のビットレート
+ * @param cameraFps 動画撮影のフレームレート
+ * @param isTenBitHdr 動画を 10Bit HDR で撮影する場合
+ */
 data class CameraSettingData(
     val frontCameraResolution: Resolution,
     val backCameraResolution: Resolution,
     val videoCodec: VideoCodec,
     val videoBitrate: Int,
-    val cameraFps: Fps
+    val cameraFps: Fps,
+    val isTenBitHdr: Boolean
 ) {
 
     /** フロント、バックカメラの解像度のうち、どちらか大きい方を返す */
@@ -60,7 +70,8 @@ data class CameraSettingData(
             backCameraResolution = CameraSettingData.Resolution.RESOLUTION_1080P,
             videoCodec = CameraSettingData.VideoCodec.AVC,
             videoBitrate = 12_000_000,
-            cameraFps = Fps.FPS_30
+            cameraFps = Fps.FPS_30,
+            isTenBitHdr = false
         )
 
     }

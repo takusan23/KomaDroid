@@ -3,6 +3,7 @@ package io.github.takusan23.komadroid.tool
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -31,6 +32,7 @@ object DataStoreTool {
     private val KEY_VIDEO_CODEC = stringPreferencesKey("video_codec")
     private val KEY_VIDEO_BITRATE = intPreferencesKey("video_bitrate")
     private val KEY_CAMERA_FPS = stringPreferencesKey("camera_fps")
+    private val KEY_IS_TEN_BIT_HDR = booleanPreferencesKey("is_ten_bit_hdr")
 
     suspend fun readData(context: Context) = withContext(Dispatchers.IO) {
         val preferences = context.dataStore.data.first()
@@ -39,7 +41,8 @@ object DataStoreTool {
             backCameraResolution = preferences[KEY_BACK_CAMERA_RESOLUTION]?.let { CameraSettingData.Resolution.resolve(it) } ?: CameraSettingData.DEFAULT_SETTING.backCameraResolution,
             videoCodec = preferences[KEY_VIDEO_CODEC]?.let { CameraSettingData.VideoCodec.resolve(it) } ?: CameraSettingData.DEFAULT_SETTING.videoCodec,
             videoBitrate = preferences[KEY_VIDEO_BITRATE] ?: CameraSettingData.DEFAULT_SETTING.videoBitrate,
-            cameraFps = preferences[KEY_CAMERA_FPS]?.let { CameraSettingData.Fps.resolve(it) } ?: CameraSettingData.DEFAULT_SETTING.cameraFps
+            cameraFps = preferences[KEY_CAMERA_FPS]?.let { CameraSettingData.Fps.resolve(it) } ?: CameraSettingData.DEFAULT_SETTING.cameraFps,
+            isTenBitHdr = preferences[KEY_IS_TEN_BIT_HDR] ?: CameraSettingData.DEFAULT_SETTING.isTenBitHdr
         )
     }
 
@@ -65,12 +68,21 @@ object DataStoreTool {
             settingData.videoBitrate
         }
 
+        // 10Bit HDR 動画撮影を有効にしている場合、コーデックを HEVC 固定にする
+        // TODO HEVC 以外も受け付ける
+        val videoCodec = if (settingData.isTenBitHdr) {
+            CameraSettingData.VideoCodec.HEVC
+        } else {
+            settingData.videoCodec
+        }
+
         context.dataStore.edit { settings ->
             settings[KEY_FRONT_CAMERA_RESOLUTION] = settingData.frontCameraResolution.key
             settings[KEY_BACK_CAMERA_RESOLUTION] = settingData.backCameraResolution.key
-            settings[KEY_VIDEO_CODEC] = settingData.videoCodec.key
+            settings[KEY_VIDEO_CODEC] = videoCodec.key
             settings[KEY_VIDEO_BITRATE] = fixBitrate
             settings[KEY_CAMERA_FPS] = settingData.cameraFps.key
+            settings[KEY_IS_TEN_BIT_HDR] = settingData.isTenBitHdr
         }
     }
 }

@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
@@ -18,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -142,7 +145,7 @@ fun ClickSettingItem(
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
 
-            Column(modifier = Modifier.weight(3f)) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     fontSize = 18.sp
@@ -153,5 +156,43 @@ fun ClickSettingItem(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SwitchSettingItem(
+    modifier: Modifier = Modifier,
+    title: String,
+    description: String? = null,
+    isCheck: Boolean,
+    onSwitchChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = modifier
+            .toggleable(
+                value = isCheck,
+                onValueChange = { _ -> onSwitchChange(!isCheck) },
+                role = Role.Switch
+            )
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 18.sp
+            )
+
+            if (description != null) {
+                Text(text = description)
+            }
+        }
+
+        Switch(
+            checked = isCheck,
+            onCheckedChange = null
+        )
     }
 }
