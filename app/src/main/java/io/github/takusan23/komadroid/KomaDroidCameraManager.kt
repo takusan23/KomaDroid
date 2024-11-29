@@ -212,7 +212,7 @@ class KomaDroidCameraManager(
                 startPreview()
 
                 try {
-                    val previewLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameMs = 0)
+                    val previewLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameNanoSeconds = 0)
                     previewAkariGraphicsProcessor.drawLoop {
                         drawFrame(
                             frontTexture = previewFrontCameraAkariSurfaceTexture!!,
@@ -576,14 +576,14 @@ class KomaDroidCameraManager(
                             launch {
                                 // MediaRecorder に OpenGL ES で描画
                                 // 録画中はループするのでこれ以降の処理には進まない
-                                val recordLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameMs = 0)
+                                val recordLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameNanoSeconds = 0)
                                 recordAkariGraphicsProcessor?.drawLoop {
                                     drawFrame(
                                         frontTexture = recordFrontCameraAkariSurfaceTexture!!,
                                         backTexture = recordBackCameraAkariSurfaceTexture!!
                                     )
                                     // System.nanoTime() が eglPresentationTimeANDROID のデフォルト値になるらしい
-                                    recordLoopContinueData.currentFrameMs = System.nanoTime() / 1_000_000
+                                    recordLoopContinueData.currentFrameNanoSeconds = System.nanoTime()
                                     recordLoopContinueData
                                 }
                             }
@@ -713,6 +713,8 @@ class KomaDroidCameraManager(
     /**
      * [AkariGraphicsProcessor.drawOneshot]や[AkariGraphicsProcessor.drawLoop]の共通している描画処理
      * 行列とかなんとか。
+     *
+     * TODO 左右反転欲しいかも。自撮りのときに文字が反転しそう
      *
      * @param frontTexture プレビュー用か録画用か
      * @param backTexture プレビュー用か録画用か
