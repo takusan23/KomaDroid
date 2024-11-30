@@ -8,4 +8,59 @@
     <string name="screen_permission_support_maybe">アプリは動作するかもしれません</string>
     <string name="screen_permission_support_description_ok">前面、背面カメラを同時に起動できます。</string>
     <string name="screen_permission_support_description_maybe">比較的最近の端末（Android 11 以降が初期搭載された端末）の場合は利用できる可能性が高いです。</string>
+    <string name="screen_permission_title">権限を付与</string>
+    <string name="screen_permission_description">権限を付与してください。カメラは撮影目的に、マイクは動画撮影の録音のために使います。</string>
+    <string name="screen_permission_grant_button">権限を付与</string>
+    <string name="screen_camera_move_enable">ドラッグで移動、ピンチイン / ピンチアウトで拡大縮小できます。</string>
+    <string name="screen_camera_move_disable">移動、拡大縮小を無効にしました。</string>
+    <string name="screen_camera_picture">写真を保存しました</string>
+    <string name="screen_camera_video">動画を保存しました</string>
+    <string name="screen_camera_setting_bottomsheet_camera_title">カメラ設定</string>
+    <string name="screen_camera_setting_bottomsheet_video_title">動画設定</string>
+    <string name="screen_camera_setting_bottomsheet_other_title">そのほか</string>
+    <string name="screen_camera_setting_bottomsheet_camera_front_camera_resolution_title">フロントカメラの解像度</string>
+    <string name="screen_camera_setting_bottomsheet_camera_front_camera_resolution_description">自撮りカメラの方です</string>
+    <string name="screen_camera_setting_bottomsheet_camera_back_camera_resolution_title">バックカメラの解像度</string>
+    <string name="screen_camera_setting_bottomsheet_camera_reset_title">カメラ設定をリセットする</string>
+    <string name="screen_camera_setting_bottomsheet_camera_reset_description">カメラの起動に失敗するようなら</string>
+    <string name="screen_camera_setting_bottomsheet_camera_resolution_720p">HD 720p</string>
+    <string name="screen_camera_setting_bottomsheet_camera_resolution_1080p">FHD 1080p</string>
+    <string name="screen_camera_setting_bottomsheet_camera_resolution_2160p">4K 2160p</string>
+    <string name="screen_camera_setting_bottomsheet_video_fps_30">30 FPS</string>
+    <string name="screen_camera_setting_bottomsheet_video_fps_60">60 FPS</string>
+    <string name="screen_camera_setting_bottomsheet_video_10_bit_hdr_title">10 ビット HDR 動画撮影を有効にする</string>
+    <string name="screen_camera_setting_bottomsheet_video_10_bit_hdr_description">従来の動画（SDR）と比べて、より多くの明るさと色で撮影することが出来ます。\n簡単に言うと「眩しい動画」が撮影できます。</string>
+    <string name="screen_camera_setting_bottomsheet_video_codec_title">動画コーデック</string>
+    <string name="screen_camera_setting_bottomsheet_video_codec_description">HEVC を利用すると、互換性を犠牲に容量が半分になると言われています。</string>
+    <string name="screen_camera_setting_bottomsheet_video_bitrate_title">ビットレート</string>
+    <string name="screen_camera_setting_bottomsheet_video_bitrate_description">1秒間に利用するデータ量です。大きくすると画質が上がりますがファイルサイズも大きくなります。</string>
+    <string name="screen_camera_setting_bottomsheet_video_fps_title">フレームレート (fps)</string>
+    <string name="screen_camera_setting_bottomsheet_video_fps_description">動画の滑らかさです</string>
+    <string name="screen_camera_setting_bottomsheet_other_privacy_policy_title">プライバシーポリシー</string>
+    <string name="screen_camera_setting_bottomsheet_other_privacy_policy_description">端末の中で処理されます。</string>
+    <string name="screen_camera_setting_bottomsheet_other_license_title">ライセンス</string>
+    <string name="screen_camera_setting_bottomsheet_other_license_description">何の見返りも求めず作ってくれたキミにありがとう</string>
+    <string name="screen_camera_setting_bottomsheet_other_source_code_title">ソースコード</string>
+    <string name="screen_camera_setting_bottomsheet_other_source_code_description">GitHub にあります</string>
+    <string name="screen_camera_setting_bottomsheet_other_version_title">バージョン</string>
+    <string name="screen_camera_ten_bit_hdr_bottomsheet_title">10 ビット HDR 動画撮影の設定</string>
+    <string name="screen_camera_ten_bit_hdr_bottomsheet_enable_title">10 ビット HDR 動画撮影を有効にする</string>
+    <string name="screen_camera_ten_bit_hdr_bottomsheet_enable_description">
+従来の動画（SDR）と比べて、より多くの明るさと色で撮影することが出来ます。\n
+簡単に言うと「眩しい動画」が撮影できます。\n
+\n
+HDR で撮影された動画は、HDR に対応したディスプレイで見ると大体撮影時と同じ色と明るさで再生されます。\n
+ただしディスプレイが HDR に対応していない場合、全体的に色が白っぽくなってしまう傾向があります。\n
+\n
+そのため、以下の目的で使う場合はこの機能を OFF にすることをおすすめします。\n
+・HDR に対応していない端末で再生する場合\n
+・動画共有サイトが対応していない場合\n
+・動画編集で利用する場合（動画編集アプリが HDR に対応している場合は別です）\n
+\n
+動画のコーデックは現状 HEVC（H.265）のみになります。\n
+\n
+有識者向け情報\n
+・HDR の形式は HLG\n
+・ガンマカーブは HLG\n
+・色空間は BT.2020\n</string>
 </resources>

@@ -9,14 +9,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import io.github.takusan23.komadroid.R
 import io.github.takusan23.komadroid.tool.CameraSettingData
 import io.github.takusan23.komadroid.ui.components.SettingTabMenu
 import io.github.takusan23.komadroid.ui.screen.MainScreenNavigation
 
-private enum class Menu(val title: String) {
-    CameraSetting("カメラ設定"),
-    VideoSetting("動画設定"),
-    Other("そのほか")
+private enum class Menu(val titleResId: Int) {
+    CameraSetting(R.string.screen_camera_setting_bottomsheet_camera_title),
+    VideoSetting(R.string.screen_camera_setting_bottomsheet_video_title),
+    Other(R.string.screen_camera_setting_bottomsheet_other_title)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,13 +48,14 @@ private fun SettingScreen(
     onSettingUpdate: (CameraSettingData) -> Unit,
     onNavigation: (MainScreenNavigation) -> Unit
 ) {
+    val context = LocalContext.current
     val currentPage = remember { mutableStateOf(Menu.CameraSetting) }
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
 
         SettingTabMenu(
             selectIndex = currentPage.value.ordinal,
-            menu = remember { Menu.entries.map { it.title } },
+            menu = remember { Menu.entries.map { context.getString(it.titleResId) } },
             onSelect = { currentPage.value = Menu.entries.get(it) }
         )
 

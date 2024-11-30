@@ -87,7 +87,7 @@ private val LicenseList = listOf(
 @Composable
 fun LicenseScreen() {
     Scaffold { innerPadding ->
-        LazyColumn(modifier = Modifier.padding(innerPadding)) {
+        LazyColumn(contentPadding = innerPadding) {
             items(LicenseList) { licenseData ->
                 LicenseItem(licenseData = licenseData)
                 HorizontalDivider()

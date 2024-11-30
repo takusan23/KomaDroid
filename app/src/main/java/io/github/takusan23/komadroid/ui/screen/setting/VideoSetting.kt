@@ -8,6 +8,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import io.github.takusan23.komadroid.R
 import io.github.takusan23.komadroid.tool.CameraSettingData
 import io.github.takusan23.komadroid.tool.NumberFormat
 import io.github.takusan23.komadroid.tool.isTenBitProfileSupported
@@ -15,10 +17,10 @@ import io.github.takusan23.komadroid.ui.components.DropdownSettingItem
 import io.github.takusan23.komadroid.ui.components.IntValueSettingItem
 import io.github.takusan23.komadroid.ui.components.SwitchSettingItem
 
-private val CameraSettingData.Fps.menuLabel
+private val CameraSettingData.Fps.menuLabelResId
     get() = when (this) {
-        CameraSettingData.Fps.FPS_30 -> "30 FPS"
-        CameraSettingData.Fps.FPS_60 -> "60 FPS"
+        CameraSettingData.Fps.FPS_30 -> R.string.screen_camera_setting_bottomsheet_video_fps_30
+        CameraSettingData.Fps.FPS_60 -> R.string.screen_camera_setting_bottomsheet_video_fps_60
     }
 
 @Composable
@@ -36,8 +38,8 @@ fun VideoSetting(
         val isVisibleTenBitHdrBottomSheet = remember { mutableStateOf(false) }
         if (isAvailable10BitHdr) {
             SwitchSettingItem(
-                title = "10 ビット HDR 動画撮影を有効にする",
-                description = "従来の動画（SDR）と比べて、より多くの明るさと色で撮影することが出来ます。\n簡単に言うと「眩しい動画」が撮影できます。",
+                title = stringResource(id = R.string.screen_camera_setting_bottomsheet_video_10_bit_hdr_title),
+                description = stringResource(id = R.string.screen_camera_setting_bottomsheet_video_10_bit_hdr_description),
                 isCheck = settingData.isTenBitHdr,
                 onSwitchChange = { isVisibleTenBitHdrBottomSheet.value = true }
             )
@@ -52,26 +54,26 @@ fun VideoSetting(
         }
 
         DropdownSettingItem(
-            title = "動画コーデック",
-            description = "HEVC を利用すると、互換性を犠牲に容量が半分になると言われています。",
+            title = stringResource(id = R.string.screen_camera_setting_bottomsheet_video_codec_title),
+            description = stringResource(id = R.string.screen_camera_setting_bottomsheet_video_codec_description),
             selectIndex = settingData.videoCodec.ordinal,
             menu = remember { CameraSettingData.VideoCodec.entries.map { it.name } },
             onSelect = { onUpdate(settingData.copy(videoCodec = CameraSettingData.VideoCodec.entries[it])) }
         )
 
         IntValueSettingItem(
-            title = "ビットレート",
-            description = "1秒間に利用するデータ量です",
+            title = stringResource(id = R.string.screen_camera_setting_bottomsheet_video_bitrate_title),
+            description = stringResource(id = R.string.screen_camera_setting_bottomsheet_video_bitrate_description),
             value = settingData.videoBitrate,
             onChange = { onUpdate(settingData.copy(videoBitrate = it)) },
             suffix = { Text(text = NumberFormat.formatByteUnit(settingData.videoBitrate)) }
         )
 
         DropdownSettingItem(
-            title = "フレームレート",
-            description = "動画の滑らかさです",
+            title = stringResource(id = R.string.screen_camera_setting_bottomsheet_video_fps_title),
+            description = stringResource(id = R.string.screen_camera_setting_bottomsheet_video_fps_description),
             selectIndex = settingData.cameraFps.ordinal,
-            menu = remember { CameraSettingData.Fps.entries.map { it.menuLabel } },
+            menu = remember { CameraSettingData.Fps.entries.map { context.getString(it.menuLabelResId) } },
             onSelect = { onUpdate(settingData.copy(cameraFps = CameraSettingData.Fps.entries[it])) }
         )
 

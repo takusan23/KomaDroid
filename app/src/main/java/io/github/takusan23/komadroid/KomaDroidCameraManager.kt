@@ -451,7 +451,7 @@ class KomaDroidCameraManager(
 
             // 撮影したらプレビューに戻す
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "保存しました", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, R.string.screen_camera_picture, Toast.LENGTH_SHORT).show()
             }
             startPreview()
         }
@@ -616,7 +616,7 @@ class KomaDroidCameraManager(
                             // MediaRecorder は stop したら使えないので、MediaRecorder を作り直してからプレビューに戻す
                             initVideoMode(cameraSettingData = cameraSettingFlow.filterNotNull().first())
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(context, "保存しました", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, R.string.screen_camera_video, Toast.LENGTH_SHORT).show()
                             }
                             startPreview()
 

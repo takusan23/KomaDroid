@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.takusan23.komadroid.KomaDroidCameraManager
+import io.github.takusan23.komadroid.R
 import io.github.takusan23.komadroid.tool.DataStoreTool
 import io.github.takusan23.komadroid.ui.components.CameraControlOverlay
 import io.github.takusan23.komadroid.ui.components.ComposeSurfaceView
@@ -183,7 +184,7 @@ fun CameraScreen(onNavigation: (MainScreenNavigation) -> Unit) {
                 isMoveEnable.value = !isMoveEnable.value
                 Toast.makeText(
                     context,
-                    if (isMoveEnable.value) "ドラッグで移動、ピンチイン / ピンチアウトで拡大縮小できます。" else "移動、拡大縮小を無効にしました。",
+                    context.getString(if (isMoveEnable.value) R.string.screen_camera_move_enable else R.string.screen_camera_move_disable),
                     Toast.LENGTH_SHORT
                 ).show()
             },

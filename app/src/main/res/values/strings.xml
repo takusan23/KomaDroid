@@ -7,4 +7,59 @@
     <string name="screen_permission_support_maybe">The app may work</string>
     <string name="screen_permission_support_description_ok">You can activate the front and rear cameras at the same time.</string>
     <string name="screen_permission_support_description_maybe">It is likely available on relatively recent devices (devices that come pre-installed with Android 11 or later).</string>
+    <string name="screen_permission_title">Grant Permissions</string>
+    <string name="screen_permission_description">Please grant permission. The camera is for shooting purposes and the microphone is for recording video.</string>
+    <string name="screen_permission_grant_button">Grant Permissions</string>
+    <string name="screen_camera_move_enable">Drag to move, pinch in/out to zoom in/out</string>
+    <string name="screen_camera_move_disable">Movement and scaling are disabled.</string>
+    <string name="screen_camera_picture">Photo saved</string>
+    <string name="screen_camera_video">Video saved</string>
+    <string name="screen_camera_setting_bottomsheet_camera_title">Camera settings</string>
+    <string name="screen_camera_setting_bottomsheet_video_title">Video Settings</string>
+    <string name="screen_camera_setting_bottomsheet_other_title">others</string>
+    <string name="screen_camera_setting_bottomsheet_camera_front_camera_resolution_title">Front camera resolution</string>
+    <string name="screen_camera_setting_bottomsheet_camera_front_camera_resolution_description">Selfie camera</string>
+    <string name="screen_camera_setting_bottomsheet_camera_back_camera_resolution_title">Rear camera resolution</string>
+    <string name="screen_camera_setting_bottomsheet_camera_reset_title">Reset camera settings</string>
+    <string name="screen_camera_setting_bottomsheet_camera_reset_description">If the camera fails to start</string>
+    <string name="screen_camera_setting_bottomsheet_camera_resolution_720p">HD 720p</string>
+    <string name="screen_camera_setting_bottomsheet_camera_resolution_1080p">FHD 1080p</string>
+    <string name="screen_camera_setting_bottomsheet_camera_resolution_2160p">4K 2160p</string>
+    <string name="screen_camera_setting_bottomsheet_video_fps_30">30 FPS</string>
+    <string name="screen_camera_setting_bottomsheet_video_fps_60">60 FPS</string>
+    <string name="screen_camera_setting_bottomsheet_video_10_bit_hdr_title">Enable 10-bit HDR video recording</string>
+    <string name="screen_camera_setting_bottomsheet_video_10_bit_hdr_description">Compared to conventional video (SDR), you can record with more brightness and color. \nSimply put, you can record \"dazzling video.\"</string>
+    <string name="screen_camera_setting_bottomsheet_video_codec_title">Video codec</string>
+    <string name="screen_camera_setting_bottomsheet_video_codec_description">It is said that using HEVC will cut the capacity in half at the expense of compatibility.</string>
+    <string name="screen_camera_setting_bottomsheet_video_bitrate_title">Bitrate</string>
+    <string name="screen_camera_setting_bottomsheet_video_bitrate_description">The amount of data used per second. Increasing the bit rate will improve image quality, but the file size will also increase.</string>
+    <string name="screen_camera_setting_bottomsheet_video_fps_title">Frame rate (fps)</string>
+    <string name="screen_camera_setting_bottomsheet_video_fps_description">The smoothness of the video</string>
+    <string name="screen_camera_setting_bottomsheet_other_privacy_policy_title">Privacy Policy</string>
+    <string name="screen_camera_setting_bottomsheet_other_privacy_policy_description">Processed on-device.</string>
+    <string name="screen_camera_setting_bottomsheet_other_license_title">License</string>
+    <string name="screen_camera_setting_bottomsheet_other_license_description">thx !!!</string>
+    <string name="screen_camera_setting_bottomsheet_other_source_code_title">Source code</string>
+    <string name="screen_camera_setting_bottomsheet_other_source_code_description">Available on GitHub</string>
+    <string name="screen_camera_setting_bottomsheet_other_version_title">Version</string>
+    <string name="screen_camera_ten_bit_hdr_bottomsheet_title">10-bit HDR video capture settings</string>
+    <string name="screen_camera_ten_bit_hdr_bottomsheet_enable_title">Enable 10-bit HDR video capture</string>
+    <string name="screen_camera_ten_bit_hdr_bottomsheet_enable_description">
+Compared to conventional video (SDR), HDR allows you to shoot with more brightness and color.\n
+Simply put, you can shoot "dazzling video".\n
+\n
+Videos shot in HDR will be played back with roughly the same color and brightness as when they were shot when viewed on a display that supports HDR.\n
+However, if the display does not support HDR, the colors tend to be whitish overall.\n
+\n
+Therefore, we recommend turning off this function if you are using it for the following purposes.\n
+・When playing on a display that does not support HDR\n
+・When the video sharing site does not support HDR\n
+・When using for video editing (unless the video editing app supports HDR)\n
+\n
+Currently, the only video codec is HEVC (H.265).\n
+\n
+Information for experts\n
+・HDR format is HLG\n
+・Gamma curve is HLG\n
+・Color space is BT.2020\n</string>
 </resources>

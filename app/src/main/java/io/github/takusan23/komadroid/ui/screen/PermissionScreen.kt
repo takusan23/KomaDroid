@@ -43,7 +43,7 @@ fun PermissionScreen(onGranted: () -> Unit) {
     )
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(text = "権限ください") }) }
+        topBar = { TopAppBar(title = { Text(text = stringResource(id = R.string.screen_permission_title)) }) }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -53,11 +53,11 @@ fun PermissionScreen(onGranted: () -> Unit) {
             verticalArrangement = Arrangement.Center
         ) {
 
-            Text(text = "権限を付与してください。カメラは撮影目的に、マイクは動画撮影の録音のために使います。")
+            Text(text = stringResource(id = R.string.screen_permission_description))
 
             Button(onClick = {
                 permissionRequest.launch(PermissionTool.REQUIRED_PERMISSION_LIST)
-            }) { Text(text = "権限を付与") }
+            }) { Text(text = stringResource(id = R.string.screen_permission_grant_button)) }
 
             MultiCameraOpenSupportInfo(
                 modifier = Modifier

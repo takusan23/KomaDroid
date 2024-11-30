@@ -15,6 +15,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.takusan23.komadroid.R
@@ -42,12 +43,12 @@ fun TenBitHdrSettingBottomSheet(
         ) {
 
             Text(
-                text = "10 ビット HDR 動画撮影の設定",
+                text = stringResource(id = R.string.screen_camera_ten_bit_hdr_bottomsheet_title),
                 fontSize = 24.sp
             )
 
             SwitchSettingItem(
-                title = "10 ビット HDR 動画撮影を有効にする",
+                title = stringResource(id = R.string.screen_camera_ten_bit_hdr_bottomsheet_enable_title),
                 isCheck = settingData.isTenBitHdr,
                 onSwitchChange = {
                     onUpdate(settingData.copy(isTenBitHdr = it))
@@ -65,27 +66,7 @@ fun TenBitHdrSettingBottomSheet(
                 contentDescription = null
             )
 
-            Text(
-                text = """
-                従来の動画（SDR）と比べて、より多くの明るさと色で撮影することが出来ます。
-                簡単に言うと「眩しい動画」が撮影できます。
-                
-                HDR で撮影された動画は、HDR に対応したディスプレイで見ると大体撮影時と同じ色と明るさで再生されます。
-                ただしディスプレイが HDR に対応していない場合、全体的に色が白っぽくなってしまう傾向があります。
-                
-                そのため、以下の目的で使う場合はこの機能を OFF にすることをおすすめします。
-                ・HDR に対応していない端末で再生する場合
-                ・動画共有サイトが対応していない場合
-                ・動画編集で利用する場合（動画編集アプリが HDR に対応している場合は別です）
-                
-                動画のコーデックは現状 HEVC（H.265）のみになります。
-                
-                有識者向け情報
-                ・HDR の形式は HLG
-                ・ガンマカーブは HLG
-                ・色空間は BT.2020
-            """.trimIndent()
-            )
+            Text(text = stringResource(id = R.string.screen_camera_ten_bit_hdr_bottomsheet_enable_description))
         }
     }
 }
