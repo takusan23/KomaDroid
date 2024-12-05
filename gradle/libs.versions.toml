@@ -1,5 +1,5 @@
 [versions]
-agp = "8.7.2"
+agp = "8.7.3"
 akaricore = "5.0.0-alpha02"
 coreSplashscreen = "1.0.1"
 datastorePreferencesVersion = "1.1.1"
