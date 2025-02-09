@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -559,7 +560,6 @@ class KomaDroidCameraManager(
                     }
 
                     _isVideoRecordingFlow.value = true
-                    // 両方の映像が来るまで録画を開始しない
                     // 録画開始
                     mediaRecorder?.start()
                     try {
@@ -577,23 +577,31 @@ class KomaDroidCameraManager(
                                 // MediaRecorder に OpenGL ES で描画
                                 // 録画中はループするのでこれ以降の処理には進まない
                                 val recordLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameNanoSeconds = 0)
-                                recordAkariGraphicsProcessor?.drawLoop {
-                                    drawFrame(
-                                        frontTexture = recordFrontCameraAkariSurfaceTexture!!,
-                                        backTexture = recordBackCameraAkariSurfaceTexture!!
-                                    )
-                                    // System.nanoTime() が eglPresentationTimeANDROID のデフォルト値になるらしい
-                                    recordLoopContinueData.currentFrameNanoSeconds = System.nanoTime()
-                                    recordLoopContinueData
+                                while (isActive) {
+                                    println("isActive")
+                                    recordAkariGraphicsProcessor?.drawOneshot {
+                                        drawFrame(
+                                            frontTexture = recordFrontCameraAkariSurfaceTexture!!,
+                                            backTexture = recordBackCameraAkariSurfaceTexture!!
+                                        )
+                                        // System.nanoTime() が eglPresentationTimeANDROID のデフォルト値になるらしい
+                                        recordLoopContinueData.currentFrameNanoSeconds = System.nanoTime()
+                                        recordLoopContinueData
+                                    }
                                 }
                             }
                         }
+                    } catch (e:Exception) {
+                        println(e.printStackTrace(System.out))
+                        if(e is CancellationException)throw e
                     } finally {
                         // 録画終了処理
                         // stopRecordVideo を呼び出したときか、collectLatest から新しい値が来た時
                         // キャンセルされた後、普通ならコルーチンが起動できない。
                         // NonCancellable を付けることで起動できるが、今回のように終了処理のみで使いましょうね
+                        println("aRE?")
                         withContext(NonCancellable) {
+                            println("mediaRecorder?.stop()")
                             mediaRecorder?.stop()
                             mediaRecorder?.release()
 

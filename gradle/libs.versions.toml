@@ -1,17 +1,17 @@
 [versions]
-agp = "8.7.3"
-akaricore = "5.0.0-alpha02"
+agp = "8.8.0"
+akaricore = "5.0.0"
 coreSplashscreen = "1.0.1"
-datastorePreferencesVersion = "1.1.1"
+datastorePreferencesVersion = "1.1.2"
 kotlin = "2.1.0"
 coreKtx = "1.15.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"
 lifecycleRuntimeKtx = "2.8.7"
-activityCompose = "1.9.3"
-composeBom = "2024.11.00"
-navigationCompose = "2.8.4"
+activityCompose = "1.10.0"
+composeBom = "2025.01.01"
+navigationCompose = "2.8.6"
 
 [libraries]
 akaricore = { module = "io.github.takusan23:akaricore", version.ref = "akaricore" }
