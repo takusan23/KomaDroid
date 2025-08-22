@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace = "io.github.takusan23.komadroid"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.github.takusan23.komadroid"
         minSdk = 30
-        targetSdk = 35
-        versionCode = 4
-        versionName = "2.0.0"
+        targetSdk = 36
+        versionCode = 5
+        versionName = "2.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
