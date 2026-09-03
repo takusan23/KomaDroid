@@ -158,7 +158,6 @@ fun CameraScreen(onNavigation: (MainScreenNavigation) -> Unit) {
 
                         KomaDroidCameraManager.CaptureMode.VIDEO -> {
                             if (isVideoRecording.value) {
-                                println("komaDroidCameraManager.awaitStopRecordVideo()")
                                 komaDroidCameraManager.awaitStopRecordVideo()
                                 currentScreenRotateType.value = ScreenRotateType.UnLockScreenRotation
                             } else {

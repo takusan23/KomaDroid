@@ -577,31 +577,25 @@ class KomaDroidCameraManager(
                                 // MediaRecorder に OpenGL ES で描画
                                 // 録画中はループするのでこれ以降の処理には進まない
                                 val recordLoopContinueData = AkariGraphicsProcessor.LoopContinueData(isRequestNextFrame = true, currentFrameNanoSeconds = 0)
-                                while (isActive) {
-                                    println("isActive")
-                                    recordAkariGraphicsProcessor?.drawOneshot {
-                                        drawFrame(
-                                            frontTexture = recordFrontCameraAkariSurfaceTexture!!,
-                                            backTexture = recordBackCameraAkariSurfaceTexture!!
-                                        )
-                                        // System.nanoTime() が eglPresentationTimeANDROID のデフォルト値になるらしい
-                                        recordLoopContinueData.currentFrameNanoSeconds = System.nanoTime()
-                                        recordLoopContinueData
-                                    }
+                                recordAkariGraphicsProcessor?.drawLoop {
+                                    drawFrame(
+                                        frontTexture = recordFrontCameraAkariSurfaceTexture!!,
+                                        backTexture = recordBackCameraAkariSurfaceTexture!!
+                                    )
+                                    // System.nanoTime() が eglPresentationTimeANDROID のデフォルト値になるらしい
+                                    recordLoopContinueData.currentFrameNanoSeconds = System.nanoTime()
+                                    recordLoopContinueData
                                 }
                             }
                         }
-                    } catch (e:Exception) {
-                        println(e.printStackTrace(System.out))
-                        if(e is CancellationException)throw e
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
                     } finally {
                         // 録画終了処理
                         // stopRecordVideo を呼び出したときか、collectLatest から新しい値が来た時
                         // キャンセルされた後、普通ならコルーチンが起動できない。
                         // NonCancellable を付けることで起動できるが、今回のように終了処理のみで使いましょうね
-                        println("aRE?")
                         withContext(NonCancellable) {
-                            println("mediaRecorder?.stop()")
                             mediaRecorder?.stop()
                             mediaRecorder?.release()
 
@@ -726,7 +720,7 @@ class KomaDroidCameraManager(
      *
      * @param frontTexture プレビュー用か録画用か
      * @param backTexture プレビュー用か録画用か
-     * @param isAwaitTextureUpdate [AkariGraphicsTextureRenderer.drawSurfaceTexture]の引数
+     * @param isAwaitTextureUpdate [drawSurfaceTexture]の引数
      */
     private suspend fun AkariGraphicsTextureRenderer.drawFrame(
         frontTexture: AkariGraphicsSurfaceTexture,
@@ -738,13 +732,13 @@ class KomaDroidCameraManager(
         val popupTexture = if (isFlip) backTexture else frontTexture
 
         // カメラ映像を描画する
-        drawSurfaceTexture(backgroundTexture, isAwaitTextureUpdate, onTransform = { mvpMatrix ->
+        drawSurfaceTexture(akariSurfaceTexture = backgroundTexture, nullOrTextureUpdateTimeoutMs = 500, onTransform = { mvpMatrix ->
             if (isLandScape) {
                 // 回転する
                 Matrix.rotateM(mvpMatrix, 0, 90f, 0f, 0f, 1f)
             }
         })
-        drawSurfaceTexture(popupTexture, isAwaitTextureUpdate, onTransform = { mvpMatrix ->
+        drawSurfaceTexture(popupTexture, nullOrTextureUpdateTimeoutMs = 500, onTransform = { mvpMatrix ->
             if (isLandScape) {
                 // 回転する
                 Matrix.rotateM(mvpMatrix, 0, 90f, 0f, 0f, 1f)
@@ -778,7 +772,7 @@ class KomaDroidCameraManager(
         recordBackCameraAkariSurfaceTexture?.setResolution(cameraSettingData)
     }
 
-    /** [AkariGraphicsSurfaceTexture.setTextureSize]を呼び出す */
+    /** [setTextureSize]を呼び出す */
     private fun AkariGraphicsSurfaceTexture.setResolution(cameraSettingData: CameraSettingData) {
         // 多分横の状態のアスペクト比を入れる。
         // カメラ側で、縦持ちの場合は、幅と高さを入れ替えてくれる（可能性）
