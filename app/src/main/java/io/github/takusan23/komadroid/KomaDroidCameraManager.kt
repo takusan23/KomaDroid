@@ -177,10 +177,16 @@ class KomaDroidCameraManager(
                 cameraSetting ?: return@collectLatest
                 surfaceHolder ?: return@collectLatest
 
-                // モードに応じて初期化を分岐
-                when (captureMode) {
-                    CaptureMode.PICTURE -> initPictureMode(cameraSetting)
-                    CaptureMode.VIDEO -> initVideoMode(cameraSetting)
+                try {
+                    // モードに応じて初期化を分岐
+                    when (captureMode) {
+                        CaptureMode.PICTURE -> initPictureMode(cameraSetting)
+                        CaptureMode.VIDEO -> initVideoMode(cameraSetting)
+                    }
+                } catch (_: Exception) {
+                    // 正確には MediaCodec だけじゃなく ImageReader も try に含まれているがまあいいか、、、
+                    _errorFlow.value = ErrorType.MediaCodecInitError
+                    return@collectLatest
                 }
 
                 // glViewport に合わせる

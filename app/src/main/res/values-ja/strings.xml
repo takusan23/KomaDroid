@@ -63,4 +63,5 @@ HDR で撮影された動画は、HDR に対応したディスプレイで見る
 ・HDR の形式は HLG\n
 ・ガンマカーブは HLG\n
 ・色空間は BT.2020\n</string>
+    <string name="dialog_error_mediacodec_init">レコーダーの準備に失敗しました。HDR または HEVC を無効にしてみてください。</string>
 </resources>
