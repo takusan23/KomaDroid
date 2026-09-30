@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.takusan23.komadroid"
         minSdk = 30
         targetSdk = 37
-        versionCode = 7
-        versionName = "2.3.0"
+        versionCode = 8
+        versionName = "2.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
