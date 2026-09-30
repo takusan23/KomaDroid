@@ -177,16 +177,16 @@ class KomaDroidCameraManager(
                 cameraSetting ?: return@collectLatest
                 surfaceHolder ?: return@collectLatest
 
-                try {
-                    // モードに応じて初期化を分岐
-                    when (captureMode) {
-                        CaptureMode.PICTURE -> initPictureMode(cameraSetting)
-                        CaptureMode.VIDEO -> initVideoMode(cameraSetting)
+                // モードに応じて初期化を分岐
+                when (captureMode) {
+                    CaptureMode.PICTURE -> initPictureMode(cameraSetting)
+                    CaptureMode.VIDEO -> {
+                        val isSuccess = initVideoMode(cameraSetting)
+                        if (!isSuccess) {
+                            _errorFlow.value = ErrorType.MediaCodecInitError
+                            return@collectLatest
+                        }
                     }
-                } catch (_: Exception) {
-                    // 正確には MediaCodec だけじゃなく ImageReader も try に含まれているがまあいいか、、、
-                    _errorFlow.value = ErrorType.MediaCodecInitError
-                    return@collectLatest
                 }
 
                 // glViewport に合わせる
@@ -622,7 +622,11 @@ class KomaDroidCameraManager(
                             }
 
                             // MediaRecorder は stop したら使えないので、MediaRecorder を作り直してからプレビューに戻す
-                            initVideoMode(cameraSettingData = cameraSettingFlow.filterNotNull().first())
+                            val isSuccess = initVideoMode(cameraSettingData = cameraSettingFlow.filterNotNull().first())
+                            if (!isSuccess) {
+                                _errorFlow.value = ErrorType.MediaCodecInitError
+                                return@withContext
+                            }
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(context, R.string.screen_camera_video, Toast.LENGTH_SHORT).show()
                             }
@@ -682,40 +686,48 @@ class KomaDroidCameraManager(
         afterRecreateRecordAkariGraphicsProcessor(cameraSettingData)
     }
 
-    /** 録画モードの初期化 */
-    private suspend fun initVideoMode(cameraSettingData: CameraSettingData) {
-        val (width, height) = cameraSettingData.orientatedResolution
-        mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setVideoSource(MediaRecorder.VideoSource.SURFACE)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setVideoEncoder(
-                when (cameraSettingData.videoCodec) {
-                    CameraSettingData.VideoCodec.AVC -> MediaRecorder.VideoEncoder.H264
-                    CameraSettingData.VideoCodec.HEVC -> MediaRecorder.VideoEncoder.HEVC
-                }
-            )
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setAudioChannels(2)
-            setVideoEncodingBitRate(cameraSettingData.videoBitrate)
-            setVideoFrameRate(cameraSettingData.cameraFps.fps)
-            setVideoSize(width, height)
-            setAudioEncodingBitRate(192_000)
-            setAudioSamplingRate(48_000)
-            // 一時的に getExternalFilesDir に保存する
-            saveVideoFile = context.getExternalFilesDir(null)!!.resolve("${System.currentTimeMillis()}.mp4")
-            setOutputFile(saveVideoFile!!)
-            prepare()
+    /** 録画モードの初期化、true で成功 */
+    private suspend fun initVideoMode(cameraSettingData: CameraSettingData): Boolean {
+        try {
+            val (width, height) = cameraSettingData.orientatedResolution
+            mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setVideoSource(MediaRecorder.VideoSource.SURFACE)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setVideoEncoder(
+                    when (cameraSettingData.videoCodec) {
+                        CameraSettingData.VideoCodec.AVC -> MediaRecorder.VideoEncoder.H264
+                        CameraSettingData.VideoCodec.HEVC -> MediaRecorder.VideoEncoder.HEVC
+                    }
+                )
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioChannels(2)
+                setVideoEncodingBitRate(cameraSettingData.videoBitrate)
+                setVideoFrameRate(cameraSettingData.cameraFps.fps)
+                setVideoSize(width, height)
+                setAudioEncodingBitRate(192_000)
+                setAudioSamplingRate(48_000)
+                // 一時的に getExternalFilesDir に保存する
+                saveVideoFile = context.getExternalFilesDir(null)!!.resolve("${System.currentTimeMillis()}.mp4")
+                setOutputFile(saveVideoFile!!)
+                prepare()
+            }
+            // 描画を OpenGL に、プレビューと同じ
+            beforeRecreateRecordAkariGraphicsProcessor()
+            recordAkariGraphicsProcessor = AkariGraphicsProcessor(
+                outputSurface = mediaRecorder!!.surface,
+                width = width,
+                height = height,
+                isEnableTenBitHdr = cameraSettingData.isTenBitHdr
+            ).apply { prepare() }
+            afterRecreateRecordAkariGraphicsProcessor(cameraSettingData)
+            return true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
         }
-        // 描画を OpenGL に、プレビューと同じ
-        beforeRecreateRecordAkariGraphicsProcessor()
-        recordAkariGraphicsProcessor = AkariGraphicsProcessor(
-            outputSurface = mediaRecorder!!.surface,
-            width = width,
-            height = height,
-            isEnableTenBitHdr = cameraSettingData.isTenBitHdr
-        ).apply { prepare() }
-        afterRecreateRecordAkariGraphicsProcessor(cameraSettingData)
     }
 
     /**
