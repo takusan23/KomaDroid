@@ -55,7 +55,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -89,8 +88,8 @@ class KomaDroidCameraManager(
     /** 静止画撮影用[ImageReader] */
     private var imageReader: ImageReader? = null
 
-    /** 録画用の[MediaRecorder] */
-    private var mediaRecorder: MediaRecorder? = null
+    /** 録画用の[MediaRecorder]、初期化に失敗するかもなので result 型みたいな */
+    private var mediaRecorder: MediaRecorderResult? = null
 
     /** 録画保存先 */
     private var saveVideoFile: File? = null
@@ -181,9 +180,9 @@ class KomaDroidCameraManager(
                 when (captureMode) {
                     CaptureMode.PICTURE -> initPictureMode(cameraSetting)
                     CaptureMode.VIDEO -> {
-                        val isSuccess = initVideoMode(cameraSetting)
-                        if (!isSuccess) {
-                            _errorFlow.value = ErrorType.MediaCodecInitError
+                        initVideoMode(cameraSetting)
+                        if (mediaRecorder is MediaRecorderResult.Error) {
+                            _errorFlow.value = ErrorType.MediaRecorderInitError
                             return@collectLatest
                         }
                     }
@@ -488,6 +487,16 @@ class KomaDroidCameraManager(
                     frontCameraState ?: return@collectLatest
                     backCameraState ?: return@collectLatest
 
+                    // MediaRecorder が使えないならエラーと return
+                    val mediaRecorder = when (val result = mediaRecorder) {
+                        MediaRecorderResult.Error, null -> {
+                            _errorFlow.value = ErrorType.MediaRecorderInitError
+                            return@collectLatest
+                        }
+
+                        is MediaRecorderResult.Success -> result.mediaRecorder
+                    }
+
                     // フロントカメラ、バックカメラがすべて準備完了になるまで待つ
                     // カメラが Open 以外は return
                     val frontCameraDevice = when (frontCameraState) {
@@ -567,7 +576,7 @@ class KomaDroidCameraManager(
 
                     _isVideoRecordingFlow.value = true
                     // 録画開始
-                    mediaRecorder?.start()
+                    mediaRecorder.start()
                     try {
                         coroutineScope {
                             launch {
@@ -602,8 +611,8 @@ class KomaDroidCameraManager(
                         // キャンセルされた後、普通ならコルーチンが起動できない。
                         // NonCancellable を付けることで起動できるが、今回のように終了処理のみで使いましょうね
                         withContext(NonCancellable) {
-                            mediaRecorder?.stop()
-                            mediaRecorder?.release()
+                            mediaRecorder.stop()
+                            mediaRecorder.release()
 
                             // 動画ファイルを動画フォルダへコピーさせ、ファイルを消す
                             withContext(Dispatchers.IO) {
@@ -622,10 +631,9 @@ class KomaDroidCameraManager(
                             }
 
                             // MediaRecorder は stop したら使えないので、MediaRecorder を作り直してからプレビューに戻す
-                            val isSuccess = initVideoMode(cameraSettingData = cameraSettingFlow.filterNotNull().first())
-                            if (!isSuccess) {
-                                _errorFlow.value = ErrorType.MediaCodecInitError
-                                return@withContext
+                            initVideoMode(cameraSetting)
+                            if (this@KomaDroidCameraManager.mediaRecorder is MediaRecorderResult.Error) {
+                                _errorFlow.value = ErrorType.MediaRecorderInitError
                             }
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(context, R.string.screen_camera_video, Toast.LENGTH_SHORT).show()
@@ -687,10 +695,10 @@ class KomaDroidCameraManager(
     }
 
     /** 録画モードの初期化、true で成功 */
-    private suspend fun initVideoMode(cameraSettingData: CameraSettingData): Boolean {
-        try {
+    private suspend fun initVideoMode(cameraSettingData: CameraSettingData) {
+        mediaRecorder = try {
             val (width, height) = cameraSettingData.orientatedResolution
-            mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
+            val mediaRecorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setVideoSource(MediaRecorder.VideoSource.SURFACE)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -715,18 +723,18 @@ class KomaDroidCameraManager(
             // 描画を OpenGL に、プレビューと同じ
             beforeRecreateRecordAkariGraphicsProcessor()
             recordAkariGraphicsProcessor = AkariGraphicsProcessor(
-                outputSurface = mediaRecorder!!.surface,
+                outputSurface = mediaRecorder.surface,
                 width = width,
                 height = height,
                 isEnableTenBitHdr = cameraSettingData.isTenBitHdr
             ).apply { prepare() }
             afterRecreateRecordAkariGraphicsProcessor(cameraSettingData)
-            return true
+            MediaRecorderResult.Success(mediaRecorder)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             e.printStackTrace()
-            return false
+            MediaRecorderResult.Error
         }
     }
 
@@ -894,6 +902,12 @@ class KomaDroidCameraManager(
     private fun getBackCameraId(): String = cameraManager
         .cameraIdList
         .first { cameraId -> cameraManager.getCameraCharacteristics(cameraId).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK }
+
+    /** MediaRecorder の初期化の成功/失敗。PlayConsole の自動テストに受からなかったので真面目に作った、、 */
+    private sealed interface MediaRecorderResult {
+        data class Success(val mediaRecorder: MediaRecorder) : MediaRecorderResult
+        data object Error : MediaRecorderResult
+    }
 
     /** 静止画撮影 or 録画 */
     enum class CaptureMode {

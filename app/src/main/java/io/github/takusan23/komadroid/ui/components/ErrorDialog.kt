@@ -12,8 +12,8 @@ enum class ErrorType(val messageResId: Int) {
     /** カメラを開くのに失敗した */
     CameraOpenError(R.string.dialog_error_camera_open),
 
-    /** MediaCodec の初期化に失敗した */
-    MediaCodecInitError(R.string.dialog_error_mediacodec_init),
+    /** MediaRecorder の初期化に失敗した */
+    MediaRecorderInitError(R.string.dialog_error_mediacodec_init),
 
     /** 不明なエラー。適当に汎用的に使ってるけど。カメラの構成に失敗したとか、切断されたとか。 */
     UnknownError(R.string.dialog_error_unknown)
