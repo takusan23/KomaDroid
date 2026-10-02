@@ -30,7 +30,7 @@ fun ErrorDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             Button(onClick = onDismiss) {
-                Text(text = "閉じる")
+                Text(text = stringResource(id = R.string.dialog_close_text))
             }
         },
         title = { Text(text = stringResource(id = R.string.dialog_error_title)) },

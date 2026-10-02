@@ -63,4 +63,5 @@ Information for experts\n
 ・Gamma curve is HLG\n
 ・Color space is BT.2020\n</string>
     <string name="dialog_error_mediacodec_init">Failed to prepare recorder. Please trying to disable HDR or HEVC.</string>
+    <string name="dialog_close_text">Close</string>
 </resources>
